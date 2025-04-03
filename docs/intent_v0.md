@@ -26,18 +26,40 @@
     4.  Call Gemini 2.5 Pro to generate descriptive placeholders based on Claude's output and/or game state (`call_gemini_api`).
     5.  Display combined output to the player (`display_output`).
 
-## 3. LLM Roles & Strategy
+## 3. LLM Roles & Strategy (REVISED)
 
-*   **Narrator & Dialogue Generation:**
-    *   **Model:** Claude 3.7 Sonnet (via Anthropic API)
-    *   **Responsibility:** Generating the main story prose, descriptions of locations/events, character dialogue, and potentially player dialogue options. Careful prompting, including relevant game state, player action, and potentially summaries of recent events/dialogue, will be important for maintaining coherence. This may involve separate calls for narration versus active dialogue sequences.
-*   **Technical Prompt Generation (Placeholders):**
-    *   **Model:** Gemini 2.5 Pro (via Google AI API, referred to as "Gemini" or "the Assistant" in logs)
-    *   **Responsibility:** Generating structured placeholder text describing the visual or audio content that would be generated in later versions. Takes input based on the current narrative context (provided by Claude's output) and the game state. Examples: `IMAGE: [Detailed description of a goblin chieftain's appearance]`, `SOUND: [Footsteps echoing in a large cavern]`, `MUSIC: [Tense, suspenseful track]`.
+This project utilizes two LLMs with distinct, specialized roles:
 
-*   **Context Management:** Effective context management is critical for a coherent experience. The intended information flow is:
-    *   Player Action -> State Update -> Claude Prompt (State + Action + History Summary) -> Claude Output (Narrative/Dialogue) -> Gemini Prompt (Claude Output + State) -> Gemini Output (Placeholders) -> Final Display.
-    *   Summaries of dialogue or key narrative events should be stored (potentially in the `game_state` or a separate context object) and provided as context in subsequent Claude prompts.
+1.  **Anthropic Claude 3.7 Sonnet (The Storyteller & Director):**
+    *   **Primary Function:** Drives the core narrative, generates character dialogue, reacts to player actions, manages plot progression, and maintains the overall tone and consistency of the story.
+    *   **Interaction with State:** Claude actively influences the game state. When the narrative dictates a change to the game's mechanics (e.g., finding an item, changing location, character relationship shifts, status effects), Claude will use the **`update_game_state` Tool** (see Section 5) to send a structured request to the Python game loop, directing it to modify the `game_state` dictionary accordingly.
+    *   **Input:** Receives the current `game_state` context, conversation history (if applicable), system prompt defining its role, and the last player action.
+    *   **Output:** Generates narrative text, dialogue, and potentially `tool_use` requests for state updates.
+
+2.  **Google AI Gemini (The World Detailer):**
+    *   **Primary Function:** Generates specific, descriptive text *on demand* when requested by the Python game loop. This typically involves descriptions of locations, items, characters, or other elements based on the current game state.
+    *   **Interaction with State:** Gemini *reads* relevant parts of the `game_state` provided in its prompt by the game loop but does *not* directly modify the state or use tools to request state changes. Its role is purely generative based on the context it's given.
+    *   **Input:** Receives specific identifiers (e.g., location ID, item ID), tags, or relevant snippets from the `game_state` provided by the Python game loop.
+    *   **Output:** Generates descriptive text (e.g., a room description, item flavor text).
+
+**Coordination Strategy:**
+
+*   **No Direct AI-to-AI Communication:** Claude and Gemini will **not** communicate directly. All interaction and information flow is mediated by the Python game loop (`game_v0.py`) and the central `game_state` dictionary.
+*   **Game Loop as Orchestrator:** The game loop:
+    1.  Provides Claude with the necessary context.
+    2.  Receives Claude's narrative output and potential tool requests.
+    3.  Handles tool requests, updating the `game_state`.
+    4.  Determines if descriptive detail is needed based on the updated state or player actions (e.g., entering a new room, examining an item).
+    5.  If needed, sends a request to Gemini with the relevant state information.
+    6.  Receives Gemini's description and presents it to the player alongside Claude's narrative.
+*   **Prompt Engineering is Key:** The distinct roles, styles, and capabilities of each LLM are defined and controlled through carefully crafted system prompts and instructions managed within the Python code and prompt files.
+
+**V0 Context Management & Future Enhancements:**
+*   **Current Approach (V0):** Basic conversation history is maintained by passing a list of the most recent user and assistant messages (using simple truncation based on message count) back to the Claude API on each turn.
+*   **Limitations:** Simple truncation can lead to loss of important long-term context, potentially causing inconsistencies or forgotten details in longer play sessions.
+*   **Future Work:** For improved long-term memory and coherence, future versions should explore more sophisticated context management techniques, such as:
+    *   **LLM-based Summarization:** Periodically summarizing older parts of the conversation history and feeding the summary along with recent turns.
+    *   **Retrieval-Augmented Generation (RAG):** Storing conversation history or key facts in a searchable database (e.g., vector store) and retrieving relevant context to inject into the prompt dynamically.
 
 ## 4. State Management (Final V0 Structure)
 
@@ -100,12 +122,15 @@ Initial exploration considered parsing custom JSON blocks from the LLM response.
     *   An `input_schema` (likely JSON schema) specifying the structure of the state changes (location, inventory add/remove, flag set/delete, companion updates, etc.).
 *   **Invocation:** When Claude determines a state update is needed, it will generate a request to use the `update_game_state` tool, providing the necessary update data structured according to the `input_schema`.
 *   **Handling in `game_v0.py`:**
-    1.  The main loop will check if the API response indicates `tool_use` as the stop reason.
-    2.  If so, it will extract the tool name (`update_game_state`) and the input data.
-    3.  It will call a dedicated Python function (e.g., `handle_state_update_tool`) to apply these changes to the `game_state` dictionary.
-    4.  It will then send a `tool_result` message back to the API, confirming the update was processed, allowing Claude to continue its narrative response.
+    1.  The main loop calls `call_claude_api` (which includes the tool definition).
+    2.  The response is processed by a new function, `handle_claude_response`.
+    3.  If this function detects `stop_reason == 'tool_use'`, it extracts the `update_game_state` tool input.
+    4.  It calls a dedicated function, `apply_tool_updates`, to modify the `game_state` dictionary based on the tool input schema.
+    5.  It then constructs and sends a `tool_result` message back to the API via a second call to `claude_client.messages.create` (without the `tools` parameter) to get the final narrative.
+    6.  If the initial stop reason was not `tool_use`, `handle_claude_response` simply extracts the narrative text.
+*   **Implementation Status:** The functions `handle_claude_response` and `apply_tool_updates` have been implemented in `game_v0.py` as of YYYY-MM-DD (Assistant's current timestamp). The old `parse_and_apply_state_updates` function has been removed.
 *   **Benefits:** More structured, less error-prone than parsing JSON from free text, aligns with standard API features.
-*   **Details:** Specific implementation details (tool definition schema, handling logic) will be refined during coding. Refer to `docs/api_notes_anthropic.md` and `docs/api_notes_google.md` for API specifics.
+*   **Details:** Specific implementation details (tool definition schema, handling logic) are now present in `game_v0.py`. Refer also to `docs/api_notes_anthropic.md` for API specifics.
 
 ## 6. API Integration Notes
 

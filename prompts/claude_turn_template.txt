@@ -17,31 +17,4 @@ Your Task:
 2.  Describe the environment and any relevant character/companion reactions and dialogue.
 3.  Keep the tone consistent with a fantasy setting.
 4.  Format dialogue clearly (e.g., Character Name: "Dialogue text").
-5.  **Crucially:** If the narrative outcome requires changes to the game state (e.g., location change, inventory update, flag set, relationship change, companion joins/leaves), embed a structured JSON block within `<state_update>...</state_update>` tags at the *end* of your response. Follow this schema precisely:
-    ```xml
-    <state_update>
-    {
-      "updates": {
-        "location": "new_location_id", // Optional: Set new location
-        "time_of_day": "new_time", // Optional: Set new time
-        "current_npcs.add": ["npc_id"], // Optional: Add NPCs
-        "current_npcs.remove": ["npc_id"], // Optional: Remove NPCs
-        "player.inventory.add": ["item_name"], // Optional: Add items to player inv
-        "player.inventory.remove": ["item_name"], // Optional: Remove items from player inv
-        "narrative_flags.set": {"flag_name": value}, // Optional: Set/update flags
-        "narrative_flags.delete": ["flag_name"], // Optional: Remove flags
-        "companions.<companion_id>.present": boolean, // Optional: Set companion presence
-        "companions.<companion_id>.inventory.add": ["item_name"], // Optional: Add to companion inv
-        "companions.<companion_id>.inventory.remove": ["item_name"], // Optional: Remove from companion inv
-        "companions.<companion_id>.relation_to_player_score": float, // Optional: Set relationship score (0-1)
-        "companions.<companion_id>.relation_to_player_summary": "string", // Optional: Set relationship summary
-        "companions.<companion_id>.relations_to_others.<other_companion_id>": float, // Optional: Set inter-companion score
-        "dialogue_target": "npc_or_companion_id_or_null", // Optional: Set/clear dialogue target
-        "current_objective": "new_objective_text_or_null" // Optional: Set/clear objective
-        // Use dot notation for nested updates. Use .add/.remove for lists, .set/.delete for dict keys.
-      },
-      "new_summary_suggestion": "Optional short summary of the outcome for context." // Optional
-    }
-    </state_update>
-    ```
-    Only include keys in "updates" for state elements that actually changed. If no state changes, omit the entire `<state_update>` block. 
+5.  Remember to use the `update_game_state` tool if the narrative requires mechanical changes to the game state, as instructed in your system prompt. 

@@ -135,4 +135,20 @@
 *   **Discussion:** Read the provided document. Identified key relevant features: multi-turn via `messages`, `system` prompt parameter, **Tool Use mechanism**, streaming, config params, vision. Confirmed Tool Use is the preferred method for state updates, replacing the previous JSON block parsing plan. Updated `docs/api_notes_anthropic.md` with findings. Updated `docs/intent_v0.md` (Section 5) to reflect the strategic shift to Tool Use.
 *   **Affected Files/State:** Read `docs/human_gathered_api_claude`. Updated `docs/api_notes_anthropic.md`, `docs/intent_v0.md`.
 *   **Decision:** Adopt Tool Use/Function Calling as the primary mechanism for LLM-driven state updates.
-*   **Next:** Implement actual API calls in `game_v0.py`, starting with `call_claude_api` and incorporating the Tool Use handling logic. 
+*   **Next:** Implement actual API calls in `game_v0.py`, starting with `call_claude_api` and incorporating the Tool Use handling logic.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Implement Claude API Tool Use handling in `game_v0.py`.
+*   **Input Context:** Refined understanding of Tool Use flow, previous implementation of basic `call_claude_api`.
+*   **Discussion:** Agreed on the need for a new state update function (`apply_tool_updates`) tailored to the tool schema and a response handler (`handle_claude_response`) to manage the two-call process for tool invocation. Decided to omit the `tools` parameter on the second call.
+*   **Affected Files/State:** Modified `game_v0.py`: Added `apply_tool_updates` and `handle_claude_response` functions. Updated the `main` loop to use the new handler. Removed the old `parse_and_apply_state_updates` and `_apply_updates_internal` functions. Updated Section 5 of `docs/intent_v0.md` to reflect the implementation details.
+*   **Decision:** Proceeded with implementing the core Tool Use handling logic.
+*   **Next:** Test the implementation, refine prompts to encourage tool use, implement history management, and integrate Gemini.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Implement conversation history management for Claude.
+*   **Input Context:** Working game loop with Tool Use handling.
+*   **Discussion:** Implemented basic history by passing recent messages back to Claude. Modified `construct_claude_prompt` to accept history, `call_claude_api` to use it (with simple truncation), and `main` loop to manage the history list. Discussed limitations of simple truncation and the potential for future enhancements (Summarization, RAG) for better long-term memory, deciding to defer these more complex approaches.
+*   **Affected Files/State:** Modified `game_v0.py` (main loop, call_claude_api, construct_claude_prompt, handle_claude_response). Updated `docs/intent_v0.md` (Section 3) to note current approach and future work on context management.
+*   **Decision:** Proceed with simple truncation for V0 history management; document need for future enhancements.
+*   **Next:** Test history implementation. Refine prompts or add other features. 
