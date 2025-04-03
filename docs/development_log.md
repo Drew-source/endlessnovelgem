@@ -1,13 +1,29 @@
 # Endless Novel - Development Log
 
-**Project Root:** `C:\Users\Marcus\Documents\Cursor\Endless Novel\` *(Please verify if this path has changed)*
-**Current Team Focus:** Preparing to implement state update parsing logic (`apply_updates_recursive`).
-**Suggested Next Steps:** Implement the `apply_updates_recursive` function in `game_v0.py`.
-**Blockers:** None currently noted (API key setup will be needed later).
+**Project Root:** `/Users/luke/Desktop/Coding/endlessnovelgem`
+**Current Team Focus:** Designing and starting implementation of a dialogue system with character memory.
+**Suggested Next Steps:** Review the created `docs/dialogue_system_design_v1.md` document and then proceed with implementation step 1 (modifying `INITIAL_GAME_STATE` in `game_v0.py`).
+**Blockers:** None.
 
 --- Reference `docs/project_structure.md` for the current file layout. ---
 
 **Log Entries (Newest First):**
+
+**2024-08-04 10:00 (Estimate):** *(Timestamp for this action)*
+*   **Goal:** Design a dialogue system with persistent character memory.
+*   **Input Context:** User request to implement dialogue distinct from narration, including character-specific memory influencing conversations and routing between dialogue/narrative modes.
+*   **Discussion:** Outlined requirements: separate dialogue mode, character memory (starting with history), state flags (`dialogue_active`, `dialogue_partner`), routing logic (enter/exit dialogue, summarization), new LLM prompts for dialogue generation and summarization. Agreed to create a design document.
+*   **Affected Files/State:** Created `docs/dialogue_system_design_v1.md` with the proposed design. Updated `docs/project_structure.md` to include the new file. Updated `docs/development_log.md` (this entry, updated project root and focus).
+*   **Decision:** Adopted the plan outlined in `docs/dialogue_system_design_v1.md` as the blueprint for implementation.
+*   **Next:** Review the design document, then modify `INITIAL_GAME_STATE` in `game_v0.py`.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for previous actions - potentially backfill later)*
+*   **Goal:** Setup Python development environment and fetch project code.
+*   **Input Context:** User request to pull repo and setup environment.
+*   **Discussion:** Cloned repo. Identified dependencies (`anthropic`, `google-generativeai`, `python-dotenv`) from `game_v0.py`. Created Python virtual environment (`venv`). Installed dependencies. Generated `requirements.txt`. Created `.env` with placeholders. Added user-provided API keys to `.env`. Added `venv/` and `.env` to `.gitignore`. Troubleshot and successfully ran `game_v0.py`.
+*   **Affected Files/State:** Cloned repo into `endlessnovelgem/`. Created `endlessnovelgem/venv/`. Created `endlessnovelgem/requirements.txt`. Created and populated `endlessnovelgem/.env`. Modified `endlessnovelgem/.gitignore`. Ran `endlessnovelgem/game_v0.py`.
+*   **Decision:** Standard Python virtual environment setup completed.
+*   **Next:** Proceed with feature development (Dialogue System).
 
 **YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
 *   **Goal:** Create a dedicated file to track project structure and remove outdated snapshots from the log.

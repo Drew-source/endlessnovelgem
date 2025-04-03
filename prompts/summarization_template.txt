@@ -1,0 +1,8 @@
+# Conversation Summarization Prompt
+
+**TASK:** Summarize the key points, outcome, and any significant changes in understanding or relationship from the following conversation transcript. Be concise (1-2 sentences).
+
+**Conversation Transcript:**
+{{dialogue_history}}
+
+**Summary:** 

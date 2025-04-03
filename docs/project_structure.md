@@ -10,6 +10,7 @@ This document provides the canonical representation of the project's directory a
 │   ├── development_log.md     # Chronological log of actions and decisions
 │   ├── intent_v0.md           # Project blueprint, goals, protocols
 │   ├── project_structure.md   # This file: Current file/directory layout
+│   ├── dialogue_system_design_v1.md # Design for dialogue & memory (NEW)
 │   ├── api_notes_anthropic.md # Setup/usage notes for Anthropic API
 │   └── api_notes_google.md    # Setup/usage notes for Google AI API
 ├── prompts/
