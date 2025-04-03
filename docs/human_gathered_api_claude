@@ -1,0 +1,2127 @@
+Welcome to Claude
+Claude is a highly performant, trustworthy, and intelligent AI platform built by Anthropic. Claude excels at tasks involving language, reasoning, analysis, coding, and more.
+
+Introducing Claude 3.7 Sonnet - our most intelligent model yet. 3.7 Sonnet is the first hybrid reasoning model on the market.
+
+Anthropic provides SDKs for Python (3.7+), TypeScript (4.5+), and Java (8+). We also currently have a Go SDK in beta.
+
+python -m venv claude-env
+
+
+ctivate the virtual environment using
+
+On macOS or Linux, source claude-env/bin/activate
+On Windows, claude-env\Scripts\activate
+
+pip install anthropic
+
+Set your API key
+Every API call requires a valid API key. The SDKs are designed to pull the API key from an environmental variable ANTHROPIC_API_KEY. You can also supply the key to the Anthropic client when initializing it.
+
+setx ANTHROPIC_API_KEY "your-api-key-here"
+
+
+
+Call the API
+Call the API by passing the proper parameters to the /messages endpoint.
+
+Note that the code provided by the Workbench sets the API key in the constructor. If you set the API key as an environment variable, you can omit that line as below.
+
+import anthropic
+
+client = anthropic.Anthropic()
+
+message = client.messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1000,
+    temperature=1,
+    system="You are a world-class poet. Respond only with short poems.",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Why is the ocean salty?"
+                }
+            ]
+        }
+    ]
+)
+print(message.content)
+
+
+Run the code using python3 claude_quickstart.py or node claude_quickstart.js.
+
+[TextBlock(text="The ocean's salty brine,\nA tale of time and design.\nRocks and rivers, their minerals shed,\nAccumulating in the ocean's bed.\nEvaporation leaves salt behind,\nIn the vast waters, forever enshrined.", type='text')]
+
+This quickstart shows how to develop a basic, but functional, Claude-powered application using the Console, Workbench, and API. You can use this same workflow as the foundation for much more powerful use cases.
+
+Authentication
+All requests to the Anthropic API must include an x-api-key header with your API key. If you are using the Client SDKs, you will set the API when constructing a client, and then the SDK will send the header on your behalf with every request. If integrating directly with the API, you’ll need to send this header yourself.
+
+​
+Content types
+The Anthropic API always accepts JSON in request bodies and returns JSON in response bodies. You will need to send the content-type: application/json header in requests. If you are using the Client SDKs, this will be taken care of automatically.
+
+​
+Response Headers
+The Anthropic API includes the following headers in every response:
+
+request-id: A globally unique identifier for the request.
+
+anthropic-organization-id: The organization ID associated with the API key used in the request.
+
+​
+Examples
+
+pip install anthropic
+
+import anthropic
+
+client = anthropic.Anthropic(
+    # defaults to os.environ.get("ANTHROPIC_API_KEY")
+    api_key="my_api_key",
+)
+message = client.messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, Claude"}
+    ]
+)
+print(message.content)
+
+IP addresses
+Anthropic services live at a fixed range of IP addresses. You can add these to your firewall to open the minimum amount of surface area for egress traffic when accessing the Anthropic API and Console. These ranges will not change without notice.
+
+​
+IPv4
+160.79.104.0/23
+
+​
+IPv6
+2607:6bc0::/48
+
+Versions
+When making API requests, you must send an anthropic-version request header. For example, anthropic-version: 2023-06-01. If you are using our client libraries, this is handled for you automatically.
+
+For any given API version, we will preserve:
+
+Existing input parameters
+Existing output parameters
+However, we may do the following:
+
+Add additional optional inputs
+Add additional values to the output
+Change conditions for specific error types
+Add new variants to enum-like output values (for example, streaming event types)
+Generally, if you are using the API as documented in this reference, we will not break your usage.
+
+​
+Version history
+We always recommend using the latest API version whenever possible. Previous versions are considered deprecated and may be unavailable for new users.
+
+2023-06-01
+New format for streaming server-sent events (SSE):
+Completions are incremental. For example, " Hello", " my", " name", " is", " Claude." instead of " Hello", " Hello my", " Hello my name", " Hello my name is", " Hello my name is Claude.".
+All events are named events, rather than data-only events.
+Removed unnecessary data: [DONE] event.
+Removed legacy exception and truncated values in responses.
+2023-01-01: Initial release.
+
+
+rrors
+​
+HTTP errors
+Our API follows a predictable HTTP error code format:
+
+400 - invalid_request_error: There was an issue with the format or content of your request. We may also use this error type for other 4XX status codes not listed below.
+
+401 - authentication_error: There’s an issue with your API key.
+
+403 - permission_error: Your API key does not have permission to use the specified resource.
+
+404 - not_found_error: The requested resource was not found.
+
+413 - request_too_large: Request exceeds the maximum allowed number of bytes.
+
+429 - rate_limit_error: Your account has hit a rate limit.
+
+500 - api_error: An unexpected error has occurred internal to Anthropic’s systems.
+
+529 - overloaded_error: Anthropic’s API is temporarily overloaded.
+
+Sudden large increases in usage may lead to an increased rate of 529 errors. We recommend ramping up gradually and maintaining consistent usage patterns.
+
+When receiving a streaming response via SSE, it’s possible that an error can occur after returning a 200 response, in which case error handling wouldn’t follow these standard mechanisms.
+
+​
+Error shapes
+Errors are always returned as JSON, with a top-level error object that always includes a type and message value. For example:
+
+{
+  "type": "error",
+  "error": {
+    "type": "not_found_error",
+    "message": "The requested resource could not be found."
+  }
+}
+
+In accordance with our versioning policy, we may expand the values within these objects, and it is possible that the type values will grow over time.
+
+​
+Request id
+Every API response includes a unique request-id header. This header contains a value such as req_018EeWyXxfu5pfWkrYcMdjWG. When contacting support about a specific request, please include this ID to help us quickly resolve your issue.
+
+Our official SDKs provide this value as a property on top-level response objects, containing the value of the x-request-id header:
+
+import anthropic
+
+client = anthropic.Anthropic()
+
+message = client.messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, Claude"}
+    ]
+)
+print(f"Request ID: {message._request_id}")
+
+Long requests
+We highly encourage using the streaming Messages API or Message Batches API for long running requests, especially those over 10 minutes.
+
+We do not recommend setting a large max_tokens values without using our streaming Messages API or Message Batches API:
+
+Some networks may drop idle connections after a variable period of time, which can cause the request to fail or timeout without receiving a response from Anthropic.
+Networks differ in reliablity; our Message Batches API can help you manage the risk of network issues by allowing you to poll for results rather than requiring an uninterrupted network connection.
+If you are building a direct API integration, you should be aware that setting a TCP socket keep-alive can reduce the impact of idle connection timeouts on some networks.
+
+Our SDKs will validate that your non-streaming Messages API requests are not expected to exceed a 10 minute timeout and also will set a socket option for TCP keep-alive.
+
+Streaming Messages
+When creating a Message, you can set "stream": true to incrementally stream the response using server-sent events (SSE).
+
+​
+Streaming with SDKs
+Our Python and TypeScript SDKs offer multiple ways of streaming. The Python SDK allows both sync and async streams. See the documentation in each SDK for details.
+
+import anthropic
+
+client = anthropic.Anthropic()
+
+with client.messages.stream(
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+    model="claude-3-7-sonnet-20250219",
+) as stream:
+  for text in stream.text_stream:
+      print(text, end="", flush=True)
+
+
+Event types
+Each server-sent event includes a named event type and associated JSON data. Each event will use an SSE event name (e.g. event: message_stop), and include the matching event type in its data.
+
+Each stream uses the following event flow:
+
+message_start: contains a Message object with empty content.
+A series of content blocks, each of which have a content_block_start, one or more content_block_delta events, and a content_block_stop event. Each content block will have an index that corresponds to its index in the final Message content array.
+One or more message_delta events, indicating top-level changes to the final Message object.
+A final message_stop event.
+​
+Ping events
+Event streams may also include any number of ping events.
+
+​
+Error events
+We may occasionally send errors in the event stream. For example, during periods of high usage, you may receive an overloaded_error, which would normally correspond to an HTTP 529 in a non-streaming context:
+
+event: error
+data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+
+
+Other events
+In accordance with our versioning policy, we may add new event types, and your code should handle unknown event types gracefully.
+
+​
+Delta types
+Each content_block_delta event contains a delta of a type that updates the content block at a given index.
+
+​
+Text delta
+A text content block delta looks like:
+
+event: content_block_delta
+data: {"type": "content_block_delta","index": 0,"delta": {"type": "text_delta", "text": "ello frien"}}
+
+
+Input JSON delta
+The deltas for tool_use content blocks correspond to updates for the input field of the block. To support maximum granularity, the deltas are partial JSON strings, whereas the final tool_use.input is always an object.
+
+You can accumulate the string deltas and parse the JSON once you receive a content_block_stop event, by using a library like Pydantic to do partial JSON parsing, or by using our SDKs, which provide helpers to access parsed incremental values.
+
+A tool_use content block delta looks like:
+
+event: content_block_delta
+data: {"type": "content_block_delta","index": 1,"delta": {"type": "input_json_delta","partial_json": "{\"location\": \"San Fra"}}}
+
+
+Note: Our current models only support emitting one complete key and value property from input at a time. As such, when using tools, there may be delays between streaming events while the model is working. Once an input key and value are accumulated, we emit them as multiple content_block_delta events with chunked partial json so that the format can automatically support finer granularity in future models.
+
+​
+Thinking delta
+When using extended thinking with streaming enabled, you’ll receive thinking content via thinking_delta events. These deltas correspond to the thinking field of the thinking content blocks.
+
+For thinking content, a special signature_delta event is sent just before the content_block_stop event. This signature is used to verify the integrity of the thinking block.
+
+A typical thinking delta looks like:
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me solve this step by step:\n\n1. First break down 27 * 453"}}
+
+
+The signature delta looks like:
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pkiMOYds..."}}
+
+
+ HTTP Stream response
+We strongly recommend that use our client SDKs when using streaming mode. However, if you are building a direct API integration, you will need to handle these events yourself.
+
+A stream response is comprised of:
+
+A message_start event
+Potentially multiple content blocks, each of which contains: a. A content_block_start event b. Potentially multiple content_block_delta events c. A content_block_stop event
+A message_delta event
+A message_stop event
+There may be ping events dispersed throughout the response as well. See Event types for more details on the format.
+
+​
+Basic streaming request
+
+curl https://api.anthropic.com/v1/messages \
+     --header "anthropic-version: 2023-06-01" \
+     --header "content-type: application/json" \
+     --header "x-api-key: $ANTHROPIC_API_KEY" \
+     --data \
+'{
+  "model": "claude-3-7-sonnet-20250219",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "max_tokens": 256,
+  "stream": true
+}'
+
+
+event: message_start
+data: {"type": "message_start", "message": {"id": "msg_1nZdL29xx5MUA1yADyHTEsnR8uuvGzszyY", "type": "message", "role": "assistant", "content": [], "model": "claude-3-7-sonnet-20250219", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 25, "output_tokens": 1}}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "!"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence":null}, "usage": {"output_tokens": 15}}
+
+event: message_stop
+data: {"type": "message_stop"}
+
+
+
+Streaming request with tool use
+In this request, we ask Claude to use a tool to tell us the weather.
+
+  curl https://api.anthropic.com/v1/messages \
+    -H "content-type: application/json" \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -d '{
+      "model": "claude-3-7-sonnet-20250219",
+      "max_tokens": 1024,
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "The city and state, e.g. San Francisco, CA"
+              }
+            },
+            "required": ["location"]
+          }
+        }
+      ],
+      "tool_choice": {"type": "any"},
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the weather like in San Francisco?"
+        }
+      ],
+      "stream": true
+    }'
+
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_014p7gG3wDgGV9EUtLvnow3U","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_sequence":null,"usage":{"input_tokens":472,"output_tokens":2},"content":[],"stop_reason":null}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Okay"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":","}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" let"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'s"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" check"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" weather"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" for"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" San"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Francisco"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":","}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" CA"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":":"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01T1x1fJ34qAmk2tNTrN7Up6","name":"get_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"location\":"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" \"San"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" Francisc"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"o,"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" CA\""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":", "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"unit\": \"fah"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"renheit\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":89}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+
+Streaming request with extended thinking
+In this request, we enable extended thinking with streaming to see Claude’s step-by-step reasoning.
+
+curl https://api.anthropic.com/v1/messages \
+     --header "x-api-key: $ANTHROPIC_API_KEY" \
+     --header "anthropic-version: 2023-06-01" \
+     --header "content-type: application/json" \
+     --data \
+'{
+    "model": "claude-3-7-sonnet-20250219",
+    "max_tokens": 20000,
+    "stream": true,
+    "thinking": {
+        "type": "enabled",
+        "budget_tokens": 16000
+    },
+    "messages": [
+        {
+            "role": "user",
+            "content": "What is 27 * 453?"
+        }
+    ]
+}'
+
+
+event: message_start
+data: {"type": "message_start", "message": {"id": "msg_01...", "type": "message", "role": "assistant", "content": [], "model": "claude-3-7-sonnet-20250219", "stop_reason": null, "stop_sequence": null}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me solve this step by step:\n\n1. First break down 27 * 453"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n2. 453 = 400 + 50 + 3"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n3. 27 * 400 = 10,800"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n4. 27 * 50 = 1,350"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n5. 27 * 3 = 81"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n6. 10,800 + 1,350 + 81 = 12,231"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pkiMOYds..."}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "27 * 453 = 12,231"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 1}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}}
+
+event: message_stop
+data: {"type": "message_stop"}
+
+
+Message Batches
+Create a Message Batch
+Send a batch of Message creation requests.
+
+The Message Batches API can be used to process multiple Messages API requests at once. Once a Message Batch is created, it begins processing immediately. Batches can take up to 24 hours to complete.
+
+Learn more about the Message Batches API in our user guide
+
+POST
+/
+v1
+/
+messages
+/
+batches
+
+
+import anthropic
+from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+from anthropic.types.messages.batch_create_params import Request
+
+client = anthropic.Anthropic()
+
+client.messages.batches.create(
+    requests=[
+        Request(
+            custom_id="my-first-request",
+            params=MessageCreateParamsNonStreaming(
+                model="claude-3-7-sonnet-20250219",
+                max_tokens=1024,
+                messages=[{
+                    "role": "user",
+                    "content": "Hello, world",
+                }]
+            )
+        ),
+        Request(
+            custom_id="my-second-request",
+            params=MessageCreateParamsNonStreaming(
+                model="claude-3-7-sonnet-20250219",
+                max_tokens=1024,
+                messages=[{
+                    "role": "user",
+                    "content": "Hi again, friend",
+                }]
+            )
+        )
+    ]
+)
+
+{
+  "archived_at": "2024-08-20T18:37:24.100435Z",
+  "cancel_initiated_at": "2024-08-20T18:37:24.100435Z",
+  "created_at": "2024-08-20T18:37:24.100435Z",
+  "ended_at": "2024-08-20T18:37:24.100435Z",
+  "expires_at": "2024-08-20T18:37:24.100435Z",
+  "id": "msgbatch_013Zva2CMHLNnXjNJJKqJ2EF",
+  "processing_status": "in_progress",
+  "request_counts": {
+    "canceled": 10,
+    "errored": 30,
+    "expired": 10,
+    "processing": 100,
+    "succeeded": 50
+  },
+  "results_url": "https://api.anthropic.com/v1/messages/batches/msgbatch_013Zva2CMHLNnXjNJJKqJ2EF/results",
+  "type": "message_batch"
+}
+
+
+{
+  "error": {
+    "message": "Invalid request",
+    "type": "invalid_request_error"
+  },
+  "type": "error"
+}
+
+Feature Support
+The Message Batches API supports the following models: Claude 3 Haiku, Claude 3 Opus, Claude 3.5 Sonnet, Claude 3.5 Sonnet v2, and Claude 3.7 Sonnet. All features available in the Messages API, including beta features, are available through the Message Batches API.
+
+Batches may contain up to 100,000 requests and be up to 256 MB in total size.
+
+Headers
+​
+anthropic-beta
+string[]
+Optional header to specify the beta version(s) you want to use.
+
+To use multiple betas, use a comma separated list like beta1,beta2 or specify the header multiple times for each beta.
+
+​
+anthropic-version
+string
+required
+The version of the Anthropic API you want to use.
+
+Read more about versioning and our version history here.
+
+​
+x-api-key
+string
+required
+Your unique API key for authentication.
+
+This key is required in the header of all API requests, to authenticate your account and access Anthropic's services. Get your API key through the Console. Each key is scoped to a Workspace.
+
+Body
+application/json
+​
+requests
+object[]
+required
+List of requests for prompt completion. Each is an individual request to create a Message.
+
+
+Show child attributes
+
+Response
+200 - application/json
+​
+archived_at
+string | null
+required
+RFC 3339 datetime string representing the time at which the Message Batch was archived and its results became unavailable.
+
+​
+cancel_initiated_at
+string | null
+required
+RFC 3339 datetime string representing the time at which cancellation was initiated for the Message Batch. Specified only if cancellation was initiated.
+
+​
+created_at
+string
+required
+RFC 3339 datetime string representing the time at which the Message Batch was created.
+
+​
+ended_at
+string | null
+required
+RFC 3339 datetime string representing the time at which processing for the Message Batch ended. Specified only once processing ends.
+
+Processing ends when every request in a Message Batch has either succeeded, errored, canceled, or expired.
+
+​
+expires_at
+string
+required
+RFC 3339 datetime string representing the time at which the Message Batch will expire and end processing, which is 24 hours after creation.
+
+​
+id
+string
+required
+Unique object identifier.
+
+The format and length of IDs may change over time.
+
+​
+processing_status
+enum<string>
+required
+Processing status of the Message Batch.
+
+Available options: in_progress, canceling, ended 
+​
+request_counts
+object
+required
+Tallies requests within the Message Batch, categorized by their status.
+
+Requests start as processing and move to one of the other statuses only once processing of the entire batch ends. The sum of all values always matches the total number of requests in the batch.
+
+
+Show child attributes
+
+​
+results_url
+string | null
+required
+URL to a .jsonl file containing the results of the Message Batch requests. Specified only once processing ends.
+
+Results in the file are not guaranteed to be in the same order as requests. Use the custom_id field to match results to requests.
+
+​
+type
+enum<string>
+default:
+message_batch
+required
+Object type.
+
+For Message Batches, this is always "message_batch".
+
+Available options: message_batch 
+
+Rate limits
+To mitigate misuse and manage capacity on our API, we have implemented limits on how much an organization can use the Claude API.
+
+We have two types of limits:
+
+Spend limits set a maximum monthly cost an organization can incur for API usage.
+Rate limits set the maximum number of API requests an organization can make over a defined period of time.
+We enforce service-configured limits at the organization level, but you may also set user-configurable limits for your organization’s workspaces.
+
+​
+About our limits
+Limits are designed to prevent API abuse, while minimizing impact on common customer usage patterns.
+Limits are defined by usage tier, where each tier is associated with a different set of spend and rate limits.
+Your organization will increase tiers automatically as you reach certain thresholds while using the API. Limits are set at the organization level. You can see your organization’s limits in the Limits page in the Anthropic Console.
+You may hit rate limits over shorter time intervals. For instance, a rate of 60 requests per minute (RPM) may be enforced as 1 request per second. Short bursts of requests at a high volume can surpass the rate limit and result in rate limit errors.
+The limits outlined below are our standard limits. If you’re seeking higher, custom limits, contact sales through the Anthropic Console.
+We use the token bucket algorithm to do rate limiting. This means that your capacity is continuously replenished up to your maximum limit, rather than being reset at fixed intervals.
+All limits described here represent maximum allowed usage, not guaranteed minimums. These limits are intended to reduce unintentional overspend and ensure fair distribution of resources among users.
+​
+Spend limits
+Each usage tier has a limit on how much you can spend on the API each calendar month. Once you reach the spend limit of your tier, until you qualify for the next tier, you will have to wait until the next month to be able to use the API again.
+
+To qualify for the next tier, you must meet a deposit requirement. To minimize the risk of overfunding your account, you cannot deposit more than your monthly spend limit.
+
+​
+Requirements to advance tier
+Usage Tier	Credit Purchase	Max Usage per Month
+Tier 1	$5	$100
+Tier 2	$40	$500
+Tier 3	$200	$1,000
+Tier 4	$400	$5,000
+Monthly Invoicing	N/A	N/A
+​
+Rate limits
+Our rate limits for the Messages API are measured in requests per minute (RPM), input tokens per minute (ITPM), and output tokens per minute (OTPM) for each model class. If you exceed any of the rate limits you will get a 429 error describing which rate limit was exceeded, along with a retry-after header indicating how long to wait.
+
+ITPM rate limits are estimated at the beginning of each request, and the estimate is adjusted during the request to reflect the actual number of input tokens used. The final adjustment counts input_tokens and cache_creation_input_tokens towards ITPM rate limits, while cache_read_input_tokens are not (though they are still billed). In some instances, cache_read_input_tokens are counted towards ITPM rate limits.
+
+OTPM rate limits are estimated based on max_tokens at the beginning of each request, and the estimate is adjusted at the end of the request to reflect the actual number of output tokens used. If you’re hitting OTPM limits earlier than expected, try reducing max_tokens to better approximate the size of your completions.
+
+Rate limits are applied separately for each model; therefore you can use different models up to their respective limits simultaneously. You can check your current rate limits and behavior in the Anthropic Console.
+
+Client SDKs
+We provide libraries in Python and TypeScript that make it easier to work with the Anthropic API.
+
+Additional configuration is needed to use Anthropic’s Client SDKs through a partner platform. If you are using Amazon Bedrock, see this guide; if you are using Google Cloud Vertex AI, see this guide.
+
+​
+Python
+Python library GitHub repo
+
+Example:
+
+import anthropic
+
+client = anthropic.Anthropic(
+    # defaults to os.environ.get("ANTHROPIC_API_KEY")
+    api_key="my_api_key",
+)
+message = client.messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, Claude"}
+    ]
+)
+print(message.content)
+
+
+Messages
+Send a structured list of input messages with text and/or image content, and the model will generate the next message in the conversation.
+
+The Messages API can be used for either single queries or stateless multi-turn conversations.
+
+Learn more about the Messages API in our user guide
+
+POST
+/
+v1
+/
+messages
+
+
+import anthropic
+
+anthropic.Anthropic().messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, world"}
+    ]
+)
+
+{
+  "content": [
+    {
+      "text": "Hi! My name is Claude.",
+      "type": "text"
+    }
+  ],
+  "id": "msg_013Zva2CMHLNnXjNJJKqJ2EF",
+  "model": "claude-3-7-sonnet-20250219",
+  "role": "assistant",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+    "input_tokens": 2095,
+    "output_tokens": 503
+  }
+}
+{
+  "error": {
+    "message": "Invalid request",
+    "type": "invalid_request_error"
+  },
+  "type": "error"
+}
+
+Headers
+​
+anthropic-beta
+string[]
+Optional header to specify the beta version(s) you want to use.
+
+To use multiple betas, use a comma separated list like beta1,beta2 or specify the header multiple times for each beta.
+
+​
+anthropic-version
+string
+required
+The version of the Anthropic API you want to use.
+
+Read more about versioning and our version history here.
+
+​
+x-api-key
+string
+required
+Your unique API key for authentication.
+
+This key is required in the header of all API requests, to authenticate your account and access Anthropic's services. Get your API key through the Console. Each key is scoped to a Workspace.
+
+Body
+application/json
+​
+max_tokens
+integer
+required
+The maximum number of tokens to generate before stopping.
+
+Note that our models may stop before reaching this maximum. This parameter only specifies the absolute maximum number of tokens to generate.
+
+Different models have different maximum values for this parameter. See models for details.
+
+Required range: x > 1
+​
+messages
+object[]
+required
+Input messages.
+
+Our models are trained to operate on alternating user and assistant conversational turns. When creating a new Message, you specify the prior conversational turns with the messages parameter, and the model then generates the next Message in the conversation. Consecutive user or assistant turns in your request will be combined into a single turn.
+
+Each input message must be an object with a role and content. You can specify a single user-role message, or you can include multiple user and assistant messages.
+
+If the final message uses the assistant role, the response content will continue immediately from the content in that message. This can be used to constrain part of the model's response.
+
+Example with a single user message:
+
+[{"role": "user", "content": "Hello, Claude"}]
+Example with multiple conversational turns:
+
+[
+  {"role": "user", "content": "Hello there."},
+  {"role": "assistant", "content": "Hi, I'm Claude. How can I help you?"},
+  {"role": "user", "content": "Can you explain LLMs in plain English?"},
+]
+Example with a partially-filled response from Claude:
+
+[
+  {"role": "user", "content": "What's the Greek name for Sun? (A) Sol (B) Helios (C) Sun"},
+  {"role": "assistant", "content": "The best answer is ("},
+]
+Each input message content may be either a single string or an array of content blocks, where each block has a specific type. Using a string for content is shorthand for an array of one content block of type "text". The following input messages are equivalent:
+
+{"role": "user", "content": "Hello, Claude"}
+{"role": "user", "content": [{"type": "text", "text": "Hello, Claude"}]}
+Starting with Claude 3 models, you can also send image content blocks:
+
+{"role": "user", "content": [
+  {
+    "type": "image",
+    "source": {
+      "type": "base64",
+      "media_type": "image/jpeg",
+      "data": "/9j/4AAQSkZJRg...",
+    }
+  },
+  {"type": "text", "text": "What is in this image?"}
+]}
+We currently support the base64 source type for images, and the image/jpeg, image/png, image/gif, and image/webp media types.
+
+See examples for more input examples.
+
+Note that if you want to include a system prompt, you can use the top-level system parameter — there is no "system" role for input messages in the Messages API.
+
+There is a limit of 100000 messages in a single request.
+
+
+Show child attributes
+
+​
+model
+string
+required
+The model that will complete your prompt.
+
+See models for additional details and options.
+
+Required string length: 1 - 256
+​
+metadata
+object
+An object describing metadata about the request.
+
+
+Show child attributes
+
+​
+stop_sequences
+string[]
+Custom text sequences that will cause the model to stop generating.
+
+Our models will normally stop when they have naturally completed their turn, which will result in a response stop_reason of "end_turn".
+
+If you want the model to stop generating when it encounters custom strings of text, you can use the stop_sequences parameter. If the model encounters one of the custom sequences, the response stop_reason value will be "stop_sequence" and the response stop_sequence value will contain the matched stop sequence.
+
+​
+stream
+boolean
+Whether to incrementally stream the response using server-sent events.
+
+See streaming for details.
+
+​
+system
+
+string
+System prompt.
+
+A system prompt is a way of providing context and instructions to Claude, such as specifying a particular goal or role. See our guide to system prompts.
+
+​
+temperature
+number
+Amount of randomness injected into the response.
+
+Defaults to 1.0. Ranges from 0.0 to 1.0. Use temperature closer to 0.0 for analytical / multiple choice, and closer to 1.0 for creative and generative tasks.
+
+Note that even with temperature of 0.0, the results will not be fully deterministic.
+
+Required range: 0 < x < 1
+​
+thinking
+object
+Configuration for enabling Claude's extended thinking.
+
+When enabled, responses include thinking content blocks showing Claude's thinking process before the final answer. Requires a minimum budget of 1,024 tokens and counts towards your max_tokens limit.
+
+See extended thinking for details.
+
+Enabled
+Disabled
+
+Show child attributes
+
+​
+tool_choice
+object
+How the model should use the provided tools. The model can use a specific tool, any available tool, decide by itself, or not use tools at all.
+
+Auto
+Any
+Tool
+ToolChoiceNone
+
+Show child attributes
+
+​
+tools
+object[]
+Definitions of tools that the model may use.
+
+If you include tools in your API request, the model may return tool_use content blocks that represent the model's use of those tools. You can then run those tools using the tool input generated by the model and then optionally return results back to the model using tool_result content blocks.
+
+Each tool definition includes:
+
+name: Name of the tool.
+description: Optional, but strongly-recommended description of the tool.
+input_schema: JSON schema for the tool input shape that the model will produce in tool_use output content blocks.
+For example, if you defined tools as:
+
+[
+  {
+    "name": "get_stock_price",
+    "description": "Get the current stock price for a given ticker symbol.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "ticker": {
+          "type": "string",
+          "description": "The stock ticker symbol, e.g. AAPL for Apple Inc."
+        }
+      },
+      "required": ["ticker"]
+    }
+  }
+]
+And then asked the model "What's the S&P 500 at today?", the model might produce tool_use content blocks in the response like this:
+
+[
+  {
+    "type": "tool_use",
+    "id": "toolu_01D7FLrfh4GYq7yT1ULFeyMV",
+    "name": "get_stock_price",
+    "input": { "ticker": "^GSPC" }
+  }
+]
+You might then run your get_stock_price tool with {"ticker": "^GSPC"} as an input, and return the following back to the model in a subsequent user message:
+
+[
+  {
+    "type": "tool_result",
+    "tool_use_id": "toolu_01D7FLrfh4GYq7yT1ULFeyMV",
+    "content": "259.75 USD"
+  }
+]
+Tools can be used for workflows that include running client-side tools and functions, or more generally whenever you want the model to produce a particular JSON structure of output.
+
+See our guide for more details.
+
+Custom Tool
+ComputerUseTool_20241022
+BashTool_20241022
+TextEditor_20241022
+ComputerUseTool_20250124
+BashTool_20250124
+TextEditor_20250124
+
+Show child attributes
+
+​
+top_k
+integer
+Only sample from the top K options for each subsequent token.
+
+Used to remove "long tail" low probability responses. Learn more technical details here.
+
+Recommended for advanced use cases only. You usually only need to use temperature.
+
+Required range: x > 0
+​
+top_p
+number
+Use nucleus sampling.
+
+In nucleus sampling, we compute the cumulative distribution over all the options for each subsequent token in decreasing probability order and cut it off once it reaches a particular probability specified by top_p. You should either alter temperature or top_p, but not both.
+
+Recommended for advanced use cases only. You usually only need to use temperature.
+
+Required range: 0 < x < 1
+Response
+200 - application/json
+​
+content
+object[]
+required
+Content generated by the model.
+
+This is an array of content blocks, each of which has a type that determines its shape.
+
+Example:
+
+[{"type": "text", "text": "Hi, I'm Claude."}]
+If the request input messages ended with an assistant turn, then the response content will continue directly from that last turn. You can use this to constrain the model's output.
+
+For example, if the input messages were:
+
+[
+  {"role": "user", "content": "What's the Greek name for Sun? (A) Sol (B) Helios (C) Sun"},
+  {"role": "assistant", "content": "The best answer is ("}
+]
+Then the response content might be:
+
+[{"type": "text", "text": "B)"}]
+Text
+Tool Use
+Thinking
+Redacted Thinking
+
+Show child attributes
+
+​
+id
+string
+required
+Unique object identifier.
+
+The format and length of IDs may change over time.
+
+​
+model
+string
+required
+The model that handled the request.
+
+Required string length: 1 - 256
+​
+role
+enum<string>
+default:
+assistant
+required
+Conversational role of the generated message.
+
+This will always be "assistant".
+
+Available options: assistant 
+​
+stop_reason
+enum<string> | null
+required
+The reason that we stopped.
+
+This may be one the following values:
+
+"end_turn": the model reached a natural stopping point
+"max_tokens": we exceeded the requested max_tokens or the model's maximum
+"stop_sequence": one of your provided custom stop_sequences was generated
+"tool_use": the model invoked one or more tools
+In non-streaming mode this value is always non-null. In streaming mode, it is null in the message_start event and non-null otherwise.
+
+Available options: end_turn, max_tokens, stop_sequence, tool_use 
+​
+stop_sequence
+string | null
+required
+Which custom stop sequence was generated, if any.
+
+This value will be a non-null string if one of your custom stop sequences was generated.
+
+​
+type
+enum<string>
+default:
+message
+required
+Object type.
+
+For Messages, this is always "message".
+
+Available options: message 
+​
+usage
+object
+required
+Billing and rate-limit usage.
+
+Anthropic's API bills and rate-limits by token counts, as tokens represent the underlying cost to our systems.
+
+Under the hood, the API transforms requests into a format suitable for the model. The model's output then goes through a parsing stage before becoming an API response. As a result, the token counts in usage will not match one-to-one with the exact visible content of an API request or response.
+
+For example, output_tokens will be non-zero, even for an empty string response from Claude.
+
+Total input tokens in a request is the summation of input_tokens, cache_creation_input_tokens, and cache_read_input_tokens.
+
+
+Hide child attributes
+
+​
+usage.cache_creation_input_tokens
+integer | null
+required
+The number of input tokens used to create the cache entry.
+
+Required range: x > 0
+​
+usage.cache_read_input_tokens
+integer | null
+required
+The number of input tokens read from the cache.
+
+Required range: x > 0
+​
+usage.input_tokens
+integer
+required
+The number of input tokens which were used.
+
+Required range: x > 0
+​
+usage.output_tokens
+integer
+required
+The number of output tokens which were used.
+
+Required range: x > 0
+
+Count Message tokens
+Count the number of tokens in a Message.
+
+The Token Count API can be used to count the number of tokens in a Message, including tools, images, and documents, without creating it.
+
+Learn more about token counting in our user guide
+
+POST
+/
+v1
+/
+messages
+/
+count_tokens
+
+import anthropic
+
+anthropic.Anthropic().messages.count_tokens(
+    model="claude-3-7-sonnet-20250219",
+    messages=[
+        {"role": "user", "content": "Hello, world"}
+    ]
+)
+
+Headers
+​
+anthropic-beta
+string[]
+Optional header to specify the beta version(s) you want to use.
+
+To use multiple betas, use a comma separated list like beta1,beta2 or specify the header multiple times for each beta.
+
+​
+anthropic-version
+string
+required
+The version of the Anthropic API you want to use.
+
+Read more about versioning and our version history here.
+
+​
+x-api-key
+string
+required
+Your unique API key for authentication.
+
+This key is required in the header of all API requests, to authenticate your account and access Anthropic's services. Get your API key through the Console. Each key is scoped to a Workspace.
+
+Body
+application/json
+​
+messages
+object[]
+required
+Input messages.
+
+Our models are trained to operate on alternating user and assistant conversational turns. When creating a new Message, you specify the prior conversational turns with the messages parameter, and the model then generates the next Message in the conversation. Consecutive user or assistant turns in your request will be combined into a single turn.
+
+Each input message must be an object with a role and content. You can specify a single user-role message, or you can include multiple user and assistant messages.
+
+If the final message uses the assistant role, the response content will continue immediately from the content in that message. This can be used to constrain part of the model's response.
+
+Example with a single user message:
+
+[{"role": "user", "content": "Hello, Claude"}]
+Example with multiple conversational turns:
+
+[
+  {"role": "user", "content": "Hello there."},
+  {"role": "assistant", "content": "Hi, I'm Claude. How can I help you?"},
+  {"role": "user", "content": "Can you explain LLMs in plain English?"},
+]
+Example with a partially-filled response from Claude:
+
+[
+  {"role": "user", "content": "What's the Greek name for Sun? (A) Sol (B) Helios (C) Sun"},
+  {"role": "assistant", "content": "The best answer is ("},
+]
+Each input message content may be either a single string or an array of content blocks, where each block has a specific type. Using a string for content is shorthand for an array of one content block of type "text". The following input messages are equivalent:
+
+{"role": "user", "content": "Hello, Claude"}
+{"role": "user", "content": [{"type": "text", "text": "Hello, Claude"}]}
+Starting with Claude 3 models, you can also send image content blocks:
+
+{"role": "user", "content": [
+  {
+    "type": "image",
+    "source": {
+      "type": "base64",
+      "media_type": "image/jpeg",
+      "data": "/9j/4AAQSkZJRg...",
+    }
+  },
+  {"type": "text", "text": "What is in this image?"}
+]}
+We currently support the base64 source type for images, and the image/jpeg, image/png, image/gif, and image/webp media types.
+
+See examples for more input examples.
+
+Note that if you want to include a system prompt, you can use the top-level system parameter — there is no "system" role for input messages in the Messages API.
+
+There is a limit of 100000 messages in a single request.
+
+
+Show child attributes
+
+​
+model
+string
+required
+The model that will complete your prompt.
+
+See models for additional details and options.
+
+Required string length: 1 - 256
+​
+system
+
+string
+System prompt.
+
+A system prompt is a way of providing context and instructions to Claude, such as specifying a particular goal or role. See our guide to system prompts.
+
+​
+thinking
+object
+Configuration for enabling Claude's extended thinking.
+
+When enabled, responses include thinking content blocks showing Claude's thinking process before the final answer. Requires a minimum budget of 1,024 tokens and counts towards your max_tokens limit.
+
+See extended thinking for details.
+
+Enabled
+Disabled
+
+Show child attributes
+
+​
+tool_choice
+object
+How the model should use the provided tools. The model can use a specific tool, any available tool, decide by itself, or not use tools at all.
+
+Auto
+Any
+Tool
+ToolChoiceNone
+
+Show child attributes
+
+​
+tools
+object[]
+Definitions of tools that the model may use.
+
+If you include tools in your API request, the model may return tool_use content blocks that represent the model's use of those tools. You can then run those tools using the tool input generated by the model and then optionally return results back to the model using tool_result content blocks.
+
+Each tool definition includes:
+
+name: Name of the tool.
+description: Optional, but strongly-recommended description of the tool.
+input_schema: JSON schema for the tool input shape that the model will produce in tool_use output content blocks.
+For example, if you defined tools as:
+
+[
+  {
+    "name": "get_stock_price",
+    "description": "Get the current stock price for a given ticker symbol.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "ticker": {
+          "type": "string",
+          "description": "The stock ticker symbol, e.g. AAPL for Apple Inc."
+        }
+      },
+      "required": ["ticker"]
+    }
+  }
+]
+And then asked the model "What's the S&P 500 at today?", the model might produce tool_use content blocks in the response like this:
+
+[
+  {
+    "type": "tool_use",
+    "id": "toolu_01D7FLrfh4GYq7yT1ULFeyMV",
+    "name": "get_stock_price",
+    "input": { "ticker": "^GSPC" }
+  }
+]
+You might then run your get_stock_price tool with {"ticker": "^GSPC"} as an input, and return the following back to the model in a subsequent user message:
+
+[
+  {
+    "type": "tool_result",
+    "tool_use_id": "toolu_01D7FLrfh4GYq7yT1ULFeyMV",
+    "content": "259.75 USD"
+  }
+]
+Tools can be used for workflows that include running client-side tools and functions, or more generally whenever you want the model to produce a particular JSON structure of output.
+
+See our guide for more details.
+See our guide for more details.
+
+Custom Tool
+ComputerUseTool_20241022
+BashTool_20241022
+TextEditor_20241022
+ComputerUseTool_20250124
+BashTool_20250124
+TextEditor_20250124
+
+Hide child attributes
+
+​
+tools.input_schema
+object
+required
+JSON schema for this tool's input.
+
+This defines the shape of the input that your tool accepts and that the model will produce.
+
+
+Show child attributes
+
+​
+tools.name
+string
+required
+Name of the tool.
+
+This is how the tool will be called by the model and in tool_use blocks.
+
+Required string length: 1 - 64
+​
+tools.cache_control
+object | null
+
+Show child attributes
+
+​
+tools.description
+string
+Description of what this tool does.
+
+Tool descriptions should be as detailed as possible. The more information that the model has about what the tool is and how to use it, the better it will perform. You can use natural language descriptions to reinforce important aspects of the tool input JSON schema.
+
+​
+tools.type
+enum<string> | null
+Available options: custom 
+Response
+200 - application/json
+​
+input_tokens
+integer
+required
+The total number of tokens across the provided list of messages, system prompt, and tools.
+Streaming with SDKs
+Our Python and TypeScript SDKs offer multiple ways of streaming. The Python SDK allows both sync and async streams. See the documentation in each SDK for details.
+
+import anthropic
+
+client = anthropic.Anthropic()
+
+with client.messages.stream(
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+    model="claude-3-7-sonnet-20250219",
+) as stream:
+  for text in stream.text_stream:
+      print(text, end="", flush=True)
+
+
+Event types
+Each server-sent event includes a named event type and associated JSON data. Each event will use an SSE event name (e.g. event: message_stop), and include the matching event type in its data.
+
+Each stream uses the following event flow:
+
+message_start: contains a Message object with empty content.
+A series of content blocks, each of which have a content_block_start, one or more content_block_delta events, and a content_block_stop event. Each content block will have an index that corresponds to its index in the final Message content array.
+One or more message_delta events, indicating top-level changes to the final Message object.
+A final message_stop event.
+​
+Ping events
+Event streams may also include any number of ping events.
+
+​
+Error events
+We may occasionally send errors in the event stream. For example, during periods of high usage, you may receive an overloaded_error, which would normally correspond to an HTTP 529 in a non-streaming context:
+
+event: error
+data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+
+
+Other events
+In accordance with our versioning policy, we may add new event types, and your code should handle unknown event types gracefully.
+
+​
+Delta types
+Each content_block_delta event contains a delta of a type that updates the content block at a given index.
+
+​
+Text delta
+A text content block delta looks like:
+
+Text delta
+
+event: content_block_delta
+data: {"type": "content_block_delta","index": 0,"delta": {"type": "text_delta", "text": "ello frien"}}
+​
+Input JSON delta
+The deltas for tool_use content blocks correspond to updates for the input field of the block. To support maximum granularity, the deltas are partial JSON strings, whereas the final tool_use.input is always an object.
+
+You can accumulate the string deltas and parse the JSON once you receive a content_block_stop event, by using a library like Pydantic to do partial JSON parsing, or by using our SDKs, which provide helpers to access parsed incremental values.
+
+A tool_use content block delta looks like:
+
+Input JSON delta
+
+event: content_block_delta
+data: {"type": "content_block_delta","index": 1,"delta": {"type": "input_json_delta","partial_json": "{\"location\": \"San Fra"}}}
+Note: Our current models only support emitting one complete key and value property from input at a time. As such, when using tools, there may be delays between streaming events while the model is working. Once an input key and value are accumulated, we emit them as multiple content_block_delta events with chunked partial json so that the format can automatically support finer granularity in future models.
+
+​
+Thinking delta
+When using extended thinking with streaming enabled, you’ll receive thinking content via thinking_delta events. These deltas correspond to the thinking field of the thinking content blocks.
+
+For thinking content, a special signature_delta event is sent just before the content_block_stop event. This signature is used to verify the integrity of the thinking block.
+
+A typical thinking delta looks like:
+
+Thinking delta
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me solve this step by step:\n\n1. First break down 27 * 453"}}
+The signature delta looks like:
+
+Signature delta
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pkiMOYds..."}}
+​
+Raw HTTP Stream response
+We strongly recommend that use our client SDKs when using streaming mode. However, if you are building a direct API integration, you will need to handle these events yourself.
+
+A stream response is comprised of:
+
+A message_start event
+Potentially multiple content blocks, each of which contains: a. A content_block_start event b. Potentially multiple content_block_delta events c. A content_block_stop event
+A message_delta event
+A message_stop event
+There may be ping events dispersed throughout the response as well. See Event types for more details on the format.
+
+​
+Basic streaming request
+Request
+
+curl https://api.anthropic.com/v1/messages \
+     --header "anthropic-version: 2023-06-01" \
+     --header "content-type: application/json" \
+     --header "x-api-key: $ANTHROPIC_API_KEY" \
+     --data \
+'{
+  "model": "claude-3-7-sonnet-20250219",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "max_tokens": 256,
+  "stream": true
+}'
+Response
+
+event: message_start
+data: {"type": "message_start", "message": {"id": "msg_1nZdL29xx5MUA1yADyHTEsnR8uuvGzszyY", "type": "message", "role": "assistant", "content": [], "model": "claude-3-7-sonnet-20250219", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 25, "output_tokens": 1}}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "!"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence":null}, "usage": {"output_tokens": 15}}
+
+event: message_stop
+data: {"type": "message_stop"}
+
+​
+Streaming request with tool use
+In this request, we ask Claude to use a tool to tell us the weather.
+
+Request
+
+  curl https://api.anthropic.com/v1/messages \
+    -H "content-type: application/json" \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -d '{
+      "model": "claude-3-7-sonnet-20250219",
+      "max_tokens": 1024,
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "The city and state, e.g. San Francisco, CA"
+              }
+            },
+            "required": ["location"]
+          }
+        }
+      ],
+      "tool_choice": {"type": "any"},
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the weather like in San Francisco?"
+        }
+      ],
+      "stream": true
+    }'
+Response
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_014p7gG3wDgGV9EUtLvnow3U","type":"message","role":"assistant","model":"claude-3-haiku-20240307","stop_sequence":null,"usage":{"input_tokens":472,"output_tokens":2},"content":[],"stop_reason":null}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Okay"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":","}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" let"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'s"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" check"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" weather"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" for"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" San"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Francisco"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":","}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" CA"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":":"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01T1x1fJ34qAmk2tNTrN7Up6","name":"get_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"location\":"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" \"San"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" Francisc"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"o,"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" CA\""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":", "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"unit\": \"fah"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"renheit\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":89}}
+
+event: message_stop
+data: {"type":"message_stop"}
+​
+Streaming request with extended thinking
+In this request, we enable extended thinking with streaming to see Claude’s step-by-step reasoning.
+
+Request
+
+curl https://api.anthropic.com/v1/messages \
+     --header "x-api-key: $ANTHROPIC_API_KEY" \
+     --header "anthropic-version: 2023-06-01" \
+     --header "content-type: application/json" \
+     --data \
+'{
+    "model": "claude-3-7-sonnet-20250219",
+    "max_tokens": 20000,
+    "stream": true,
+    "thinking": {
+        "type": "enabled",
+        "budget_tokens": 16000
+    },
+    "messages": [
+        {
+            "role": "user",
+            "content": "What is 27 * 453?"
+        }
+    ]
+}'
+Response
+
+event: message_start
+data: {"type": "message_start", "message": {"id": "msg_01...", "type": "message", "role": "assistant", "content": [], "model": "claude-3-7-sonnet-20250219", "stop_reason": null, "stop_sequence": null}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me solve this step by step:\n\n1. First break down 27 * 453"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n2. 453 = 400 + 50 + 3"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n3. 27 * 400 = 10,800"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n4. 27 * 50 = 1,350"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n5. 27 * 3 = 81"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "\n6. 10,800 + 1,350 + 81 = 12,231"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pkiMOYds..."}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "27 * 453 = 12,231"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 1}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}}
+
+event: message_stop
+data: {"type": "message_stop"}
+
+Messages
+Migrating from Text Completions
+Migrating from Text Completions to Messages
+
+When migrating from from Text Completions to Messages, consider the following changes.
+
+​
+Inputs and outputs
+The largest change between Text Completions and the Messages is the way in which you specify model inputs and receive outputs from the model.
+
+With Text Completions, inputs are raw strings:
+
+Python
+
+prompt = "\n\nHuman: Hello there\n\nAssistant: Hi, I'm Claude. How can I help?\n\nHuman: Can you explain Glycolysis to me?\n\nAssistant:"
+With Messages, you specify a list of input messages instead of a raw prompt:
+
+
+Shorthand
+
+Expanded
+
+messages = [
+  {"role": "user", "content": "Hello there."},
+  {"role": "assistant", "content": "Hi, I'm Claude. How can I help?"},
+  {"role": "user", "content": "Can you explain Glycolysis to me?"},
+]
+Each input message has a role and content.
+
+Role names
+
+The Text Completions API expects alternating \n\nHuman: and \n\nAssistant: turns, but the Messages API expects user and assistant roles. You may see documentation referring to either “human” or “user” turns. These refer to the same role, and will be “user” going forward.
+
+With Text Completions, the model’s generated text is returned in the completion values of the response:
+
+Python
+
+>>> response = anthropic.completions.create(...)
+>>> response.completion
+" Hi, I'm Claude"
+With Messages, the response is the content value, which is a list of content blocks:
+
+Python
+
+>>> response = anthropic.messages.create(...)
+>>> response.content
+[{"type": "text", "text": "Hi, I'm Claude"}]
+​
+Putting words in Claude’s mouth
+With Text Completions, you can pre-fill part of Claude’s response:
+
+Python
+
+prompt = "\n\nHuman: Hello\n\nAssistant: Hello, my name is"
+With Messages, you can achieve the same result by making the last input message have the assistant role:
+
+Python
+
+messages = [
+  {"role": "human", "content": "Hello"},
+  {"role": "assistant", "content": "Hello, my name is"},
+]
+When doing so, response content will continue from the last input message content:
+
+JSON
+
+{
+  "role": "assistant",
+  "content": [{"type": "text", "text": " Claude. How can I assist you today?" }],
+  ...
+}
+​
+System prompt
+With Text Completions, the system prompt is specified by adding text before the first \n\nHuman: turn:
+
+Python
+
+prompt = "Today is January 1, 2024.\n\nHuman: Hello, Claude\n\nAssistant:"
+With Messages, you specify the system prompt with the system parameter:
+
+Python
+
+anthropic.Anthropic().messages.create(
+    model="claude-3-opus-20240229",
+    max_tokens=1024,
+    system="Today is January 1, 2024.", # <-- system prompt
+    messages=[
+        {"role": "user", "content": "Hello, Claude"}
+    ]
+)
+​
+Model names
+The Messages API requires that you specify the full model version (e.g. claude-3-opus-20240229).
+
+We previously supported specifying only the major version number (e.g. claude-2), which resulted in automatic upgrades to minor versions. However, we no longer recommend this integration pattern, and Messages do not support it.
+
+​
+Stop reason
+Text Completions always have a stop_reason of either:
+
+"stop_sequence": The model either ended its turn naturally, or one of your custom stop sequences was generated.
+"max_tokens": Either the model generated your specified max_tokens of content, or it reached its absolute maximum.
+Messages have a stop_reason of one of the following values:
+
+"end_turn": The conversational turn ended naturally.
+"stop_sequence": One of your specified custom stop sequences was generated.
+"max_tokens": (unchanged)
+​
+Specifying max tokens
+Text Completions: max_tokens_to_sample parameter. No validation, but capped values per-model.
+Messages: max_tokens parameter. If passing a value higher than the model supports, returns a validation error.
+​
+Streaming format
+When using "stream": true in with Text Completions, the response included any of completion, ping, and error server-sent-events. See Text Completions streaming for details.
+
+Messages can contain multiple content blocks of varying types, and so its streaming format is somewhat more complex. See Messages streaming for details.
+
+Messages examples
+Request and response examples for the Messages API
+
+See the API reference for full documentation on available parameters.
+
+import anthropic
+
+message = anthropic.Anthropic().messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, Claude"}
+    ]
+)
+print(message)
+
+
+{
+  "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello!"
+    }
+  ],
+  "model": "claude-3-7-sonnet-20250219",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 6
+  }
+}
+
+
+Multiple conversational turns
+The Messages API is stateless, which means that you always send the full conversational history to the API. You can use this pattern to build up a conversation over time. Earlier conversational turns don’t necessarily need to actually originate from Claude — you can use synthetic assistant messages.
+
+#!/bin/sh
+curl https://api.anthropic.com/v1/messages \
+     --header "x-api-key: $ANTHROPIC_API_KEY" \
+     --header "anthropic-version: 2023-06-01" \
+     --header "content-type: application/json" \
+     --data \
+'{
+    "model": "claude-3-7-sonnet-20250219",
+    "max_tokens": 1024,
+    "messages": [
+        {"role": "user", "content": "Hello, Claude"},
+        {"role": "assistant", "content": "Hello!"},
+        {"role": "user", "content": "Can you describe LLMs to me?"}
+
+    ]
+}'
+
+
+import anthropic
+
+message = anthropic.Anthropic().messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, Claude"},
+        {"role": "assistant", "content": "Hello!"},
+        {"role": "user", "content": "Can you describe LLMs to me?"}
+    ],
+)
+print(message)
+
+
+
+Vision
+Claude can read both text and images in requests. We support both base64 and url source types for images, and the image/jpeg, image/png, image/gif, and image/webp media types. See our vision guide for more details.
+
+import anthropic
+import base64
+import httpx
+
+# Option 1: Base64-encoded image
+image_url = "https://upload.wikimedia.org/wikipedia/commons/a/a7/Camponotus_flavomarginatus_ant.jpg"
+image_media_type = "image/jpeg"
+image_data = base64.standard_b64encode(httpx.get(image_url).content).decode("utf-8")
+
+message = anthropic.Anthropic().messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_media_type,
+                        "data": image_data,
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": "What is in the above image?"
+                }
+            ],
+        }
+    ],
+)
+print(message)
+
+# Option 2: URL-referenced image
+message_from_url = anthropic.Anthropic().messages.create(
+    model="claude-3-7-sonnet-20250219",
+    max_tokens=1024,
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "url",
+                        "url": "https://upload.wikimedia.org/wikipedia/commons/a/a7/Camponotus_flavomarginatus_ant.jpg",
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": "What is in the above image?"
+                }
+            ],
+        }
+    ],
+)
+print(message_from_url)
+
+
+List Models
+List available models.
+
+The Models API response can be used to determine which models are available for use in the API. More recently released models are listed first.
+
+GET
+/
+v1
+/
+models
+
+import anthropic
+
+client = anthropic.Anthropic()
+
+client.models.list(limit=20)
+
+{
+  "data": [
+    {
+      "created_at": "2025-02-19T00:00:00Z",
+      "display_name": "Claude 3.7 Sonnet",
+      "id": "claude-3-7-sonnet-20250219",
+      "type": "model"
+    }
+  ],
+  "first_id": "<string>",
+  "has_more": true,
+  "last_id": "<string>"
+}

@@ -1,0 +1,7 @@
+Based on the following narrative text, generate descriptive placeholders (like IMAGE: [...] or SOUND: [...]) for key visual and audio elements:
+
+Narrative Text:
+{narrative_text}
+
+Relevant State Information:
+Location: {player_location} 
