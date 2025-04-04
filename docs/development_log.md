@@ -167,4 +167,35 @@
 *   **Discussion:** Implemented basic history by passing recent messages back to Claude. Modified `construct_claude_prompt` to accept history, `call_claude_api` to use it (with simple truncation), and `main` loop to manage the history list. Discussed limitations of simple truncation and the potential for future enhancements (Summarization, RAG) for better long-term memory, deciding to defer these more complex approaches.
 *   **Affected Files/State:** Modified `game_v0.py` (main loop, call_claude_api, construct_claude_prompt, handle_claude_response). Updated `docs/intent_v0.md` (Section 3) to note current approach and future work on context management.
 *   **Decision:** Proceed with simple truncation for V0 history management; document need for future enhancements.
-*   **Next:** Test history implementation. Refine prompts or add other features. 
+*   **Next:** Test history implementation. Refine prompts or add other features.
+
+## [Date - Placeholder] - Dialogue Exit & History Fixes Complete
+
+**Context:** Following the reset to a stable state where dialogue entry worked, the focus was on enabling dialogue exit and fixing the history inconsistency that caused errors when returning to narrative mode after tool use.
+
+**Actions & Decisions:**
+
+*   **Dialogue Exit Enablement:**
+    *   Modified `handle_dialogue_turn` to pass `tools=[end_dialogue_tool]` to `call_claude_api`, allowing the LLM to trigger conversation endings.
+    *   Changed `handle_dialogue_turn` to return the raw `response_obj` instead of processed text.
+    *   Updated the `main` loop's dialogue branch to call `handle_claude_response` to process the raw response, enabling tool detection.
+    *   Refined the dialogue branch logic to update the character's specific dialogue history *only* if the `end_dialogue` tool was not used (checked via `stop_processing_flag`).
+*   **History Correction (Tool Use Sequence):**
+    *   Modified `handle_claude_response` to return a more detailed 5-tuple: `(processed_text, initial_response_obj, tool_results_content_sent, final_response_obj_after_tool, stop_processing_flag)`.
+    *   Updated both dialogue and narrative branches in `main` to unpack these 5 values.
+    *   **Critically redesigned the history update logic in the *narrative* branch:** Ensured that after an assistant message containing `tool_use` (for *any* tool like `start_dialogue`, `end_dialogue`, or `update_game_state`), a user-role message containing the corresponding `tool_result` block(s) is immediately appended to the main `conversation_history`. This resolved the API error related to mismatched tool use/result sequences.
+    *   Ensured the narrative branch uses the `stop_processing_flag` to correctly skip Gemini calls during dialogue transitions.
+*   **Testing:** Confirmed successful execution of the full narrative -> dialogue entry -> exchange -> dialogue exit -> narrative continuation cycle. Verified that character memory (dialogue history) persists correctly between separate conversations.
+
+**Current Status:**
+
+*   The core narrative and dialogue engines are functioning correctly.
+*   Transitions between narrative and dialogue modes (both entry and exit) are working reliably via tool use.
+*   Character-specific dialogue history persists and influences conversation.
+*   The main conversation history correctly handles the sequence of tool use and results, preventing API errors.
+*   **The primary goals for the dialogue system (V1 as per design doc) are now met.**
+
+**Next Steps:**
+*   Further testing and refinement of prompts (especially dialogue prompts for naturalness and reliable tool use).
+*   Consider potential edge cases or minor improvements.
+*   Plan next major feature development (e.g., more complex state interactions, richer world). 

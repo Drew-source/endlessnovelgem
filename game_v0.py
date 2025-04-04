@@ -531,8 +531,9 @@ def call_gemini_api(prompt: str) -> str:
 
 # NEW: Function to handle Claude's response, including tool use
 def handle_claude_response(initial_response: anthropic.types.Message | None,
-                           prompt_details: dict, # Contains system_prompt, user_prompt, history
-                           game_state: dict) -> tuple[str, anthropic.types.Message | None]: # Returns text AND final Message obj
+                           prompt_details: dict, # Contains system_prompt, user_prompt, history/messages
+                           game_state: dict
+                           ) -> tuple[str, anthropic.types.Message | None, list | None, anthropic.types.Message | None, bool]:
     """Handles the response from Claude, including potential tool use.
 
     If a state update tool is used, it applies the updates and makes a second call
@@ -546,35 +547,40 @@ def handle_claude_response(initial_response: anthropic.types.Message | None,
 
     Returns:
         A tuple containing:
-        - The final narrative string, or an error message string.
-        - The final Anthropic Message object (from the first or second call), or None.
+        - processed_text: The final narrative/dialogue string for display.
+        - initial_response_obj: The original response object received from the API (contains tool_use if applicable).
+        - tool_results_content_sent: The list sent back in the user-role message for tool results (only for update_game_state).
+        - final_response_obj: The Message object from the second call (if made), else None.
+        - stop_processing_flag: Boolean indicating if a dialogue tool stopped processing.
     """
-    if not initial_response:
-        return "[ERROR] Received no response object from Claude API call.", None
+    # Initialize return values
+    processed_text = ""
+    initial_response_obj = initial_response # Always return the first response
+    tool_results_content_sent = None
+    final_response_obj_after_tool = None # Specific name for clarity
+    stop_processing_flag = False
 
-    narrative_text = "" # Text generated BEFORE tool use
-    final_response_obj = initial_response # Start assuming the first response is final
-    tool_used_and_processed = False
-    make_second_call = False # Flag specifically for update_game_state
-    stop_processing = False # Flag to exit early for dialogue tools
+    if not initial_response:
+        processed_text = "[ERROR] Received no response object from Claude API call."
+        return processed_text, initial_response_obj, tool_results_content_sent, final_response_obj_after_tool, stop_processing_flag
 
     # --- Extract any text generated *before* potential tool use --- #
     if initial_response.content:
         for block in initial_response.content:
             if block.type == "text":
-                narrative_text += block.text + "\n"
-    narrative_text = narrative_text.strip()
+                processed_text += block.text + "\n"
+    processed_text = processed_text.strip()
     # ------------------------------------------------------------- #
 
     # Check for tool use stop reason
     if initial_response.stop_reason == "tool_use":
         print("\n[INFO] Claude requested tool use.")
         tool_calls_found = False
-        tool_results_content = [] # Content block(s) for the next user message (only for update_game_state)
+        tool_results_content_list = [] # Renamed for clarity
 
         # Iterate through content blocks to find tool requests
         for block in initial_response.content:
-            if block.type != "tool_use": continue # Skip non-tool blocks
+            if block.type != "tool_use": continue
 
             tool_calls_found = True
             tool_name = block.name
@@ -584,63 +590,68 @@ def handle_claude_response(initial_response: anthropic.types.Message | None,
 
             # --- Process Specific Tools --- #
             if tool_name == "update_game_state":
+                # ... (logic for applying update_game_state as before) ...
+                # --- Start of update_game_state logic ---
                 update_error = None
                 try:
-                    # Modifies game_state in-place
-                    updates_applied, state_change_summary = apply_tool_updates(tool_input, game_state) 
+                    updates_applied, state_change_summary = apply_tool_updates(tool_input, game_state)
                     if updates_applied:
                         tool_result_text = f"Game state updated successfully: {state_change_summary}"
                     else:
                         tool_result_text = "State update requested, but no changes were applicable."
-                    tool_used_and_processed = True
-                    make_second_call = True # ONLY update_game_state triggers a second call
+                    # tool_used_and_processed = True # Not strictly needed anymore
+                    # make_second_call = True
                 except Exception as e:
                     print(f"[ERROR] Failed to apply tool updates for {tool_use_id}: {e}")
                     update_error = e
                     tool_result_text = f"Error applying game state update: {e}"
-                
+
                 # Prepare result for the second call (if making one)
-                tool_results_content.append({
+                tool_results_content_list.append({
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,
                     "content": tool_result_text,
                     # Optional: "is_error": bool(update_error)
                 })
+                # --- End of update_game_state logic ---
 
             elif tool_name == "start_dialogue":
+                # ... (logic for applying start_dialogue as before) ...
+                # --- Start of start_dialogue logic ---
                 character_id = tool_input.get('character_id')
                 if character_id and character_id in game_state.get('companions', {}):
                     if game_state['companions'][character_id].get('present', False):
-                        if not game_state['dialogue_active']: # Avoid starting if already in dialogue
+                        if not game_state['dialogue_active']:
                             game_state['dialogue_active'] = True
                             game_state['dialogue_partner'] = character_id
                             partner_name = game_state['companions'][character_id].get('name', character_id)
                             print(f"[INFO] Tool initiated dialogue with {partner_name} ({character_id}).")
-                            # Append to any narrative text generated before the tool call
-                            narrative_text += f"\n(You begin a conversation with {partner_name}.)"
-                            tool_used_and_processed = True
-                            stop_processing = True # Dialogue starts next turn, stop processing this one
+                            processed_text += f"\n(You begin a conversation with {partner_name}.)"
+                            stop_processing_flag = True
                         else:
                             print(f"[WARN] Tool requested start_dialogue, but dialogue is already active with {game_state['dialogue_partner']}.")
-                            narrative_text += f"\n(You are already talking to {game_state['companions'].get(game_state['dialogue_partner'],{}).get('name','someone')}.)"
-                            stop_processing = True
+                            processed_text += f"\n(You are already talking to {game_state['companions'].get(game_state['dialogue_partner'],{}).get('name','someone')}.)"
+                            stop_processing_flag = True
                     else:
                         print(f"[WARN] Tool requested start_dialogue with {character_id}, but they are not present.")
-                        narrative_text += f"\n({game_state['companions'][character_id].get('name', character_id)} is not here to talk to.)"
-                        stop_processing = True
+                        processed_text += f"\n({game_state['companions'][character_id].get('name', character_id)} is not here to talk to.)"
+                        stop_processing_flag = True
                 else:
                     print(f"[WARN] Tool requested start_dialogue with invalid/unknown character ID: {character_id}")
-                    narrative_text += f"\n(You look around, but don't see anyone named '{character_id}' to talk to.)"
-                    stop_processing = True # Stop, tool call was invalid
-            
+                    processed_text += f"\n(You look around, but don't see anyone named '{character_id}' to talk to.)"
+                    stop_processing_flag = True
+                # --- End of start_dialogue logic ---
+
             elif tool_name == "end_dialogue":
+                # ... (logic for applying end_dialogue as before) ...
+                 # --- Start of end_dialogue logic ---
                 if game_state['dialogue_active']:
                     partner_id = game_state.get('dialogue_partner')
                     partner_name = game_state.get('companions', {}).get(partner_id, {}).get('name', 'Someone')
                     print(f"[INFO] Tool ended dialogue with {partner_name}.")
-                    
-                    # Summarize before clearing state
+
                     if partner_id and partner_id in game_state.get('companions', {}):
+                        # ... (summarization logic) ...
                         partner_memory = game_state['companions'][partner_id].get('memory', {})
                         dialogue_history_to_summarize = partner_memory.get('dialogue_history', [])
                         if dialogue_history_to_summarize:
@@ -648,90 +659,108 @@ def handle_claude_response(initial_response: anthropic.types.Message | None,
                             current_summary = game_state.get('narrative_context_summary', '')
                             game_state['narrative_context_summary'] = current_summary + f"\n\n[Summary of conversation with {partner_name}: {summary}]"
                             print(f"[DEBUG] Appended summary to narrative context.")
-                    
+
                     game_state['dialogue_active'] = False
                     game_state['dialogue_partner'] = None
-                    narrative_text += f"\n(The conversation with {partner_name} ends.)"
-                    tool_used_and_processed = True
-                    stop_processing = True # Stop processing, dialogue ended
+                    processed_text += f"\n(The conversation with {partner_name} ends.)"
+                    stop_processing_flag = True
                 else:
                     print("[WARN] Tool requested end_dialogue, but dialogue was not active.")
-                    narrative_text += "\n(There was no conversation to end.)"
-                    stop_processing = True # Stop, tool call was invalid in this context
+                    processed_text += "\n(There was no conversation to end.)"
+                    stop_processing_flag = True
+                 # --- End of end_dialogue logic ---
 
             else: # Unknown tool requested
                 print(f"[WARNING] Claude requested unknown tool: {tool_name}")
-                narrative_text += f"\n[Internal Note: Claude requested unknown tool '{tool_name}'.]"
-                # Decide if we should stop or continue? Let's stop for safety.
-                stop_processing = True 
+                processed_text += f"\n[Internal Note: Claude requested unknown tool '{tool_name}'.]"
+                stop_processing_flag = True
 
             # If a dialogue tool told us to stop, break from processing further tool calls
-            if stop_processing: 
-                break 
+            if stop_processing_flag:
+                break
         # --- End Tool Processing Loop --- #
 
         # If a stop was requested (dialogue tool used), return immediately
-        if stop_processing:
-            return narrative_text.strip(), initial_response # Return text collected so far + original response obj
+        if stop_processing_flag:
+            # Return current text, original response, no tool result, no final response, True flag
+            return processed_text.strip(), initial_response_obj, None, None, True
 
-        # If we processed 'update_game_state' and need the second call
-        if tool_used_and_processed and make_second_call:
+        # If we processed 'update_game_state' (check if tool_results_content_list is populated)
+        if tool_results_content_list: # This implies update_game_state was the tool processed
+            tool_results_content_sent = tool_results_content_list # Assign for return value
             print("[INFO] Sending tool results back to Claude for final narrative...")
             # --- Construct messages for the second call --- 
-            system_prompt = prompt_details.get('system_prompt', '')
-            user_prompt = prompt_details.get('user_prompt', '')
-            history = prompt_details.get('history', [])
-            original_messages_sent = history + [{"role": "user", "content": user_prompt}]
-            # --- CORRECTED: Construct assistant message carefully --- 
+            # Determine message construction method based on keys in prompt_details
+            if 'messages' in prompt_details and 'system' in prompt_details:
+                 # Dialogue call structure (shouldn't happen here, but for safety)
+                 system_prompt = prompt_details.get('system', '')
+                 original_messages_sent = prompt_details.get('messages', [])
+            elif 'history' in prompt_details and 'user_prompt' in prompt_details:
+                 # Narrative call structure
+                 system_prompt = prompt_details.get('system_prompt', '')
+                 user_prompt = prompt_details.get('user_prompt', '')
+                 history = prompt_details.get('history', [])
+                 original_messages_sent = history + [{"role": "user", "content": user_prompt}]
+            else:
+                 print("[ERROR] Invalid prompt_details for second call construction.")
+                 original_messages_sent = []
+                 system_prompt = ""
+            
+            # Construct assistant message from the *initial* response
             assistant_turn_content = []
             if initial_response.content:
                  assistant_turn_content = [block.model_dump(exclude_unset=True) for block in initial_response.content]
             assistant_turn_message = {"role": initial_response.role, "content": assistant_turn_content}
-            # ------------------------------------------------------
+
             messages_for_second_call = original_messages_sent + \
                                        [assistant_turn_message] + \
-                                       [{ "role": "user", "content": tool_results_content }]
+                                       [{ "role": "user", "content": tool_results_content_sent }]
+            
             # Make the second API call WITHOUT tools parameter
             second_response = None
             if claude_client and anthropic_model_name:
                 try:
-                    second_response = claude_client.messages.create(
-                        model=anthropic_model_name,
-                        max_tokens=2048,
-                        system=system_prompt,
-                        messages=messages_for_second_call
-                    )
-                    final_response_obj = second_response # Use this as the final response now
+                    # Re-use call_claude_api for consistency?
+                    # Need to adapt prompt_details for the second call
+                    second_call_prompt_details = {
+                        "system": system_prompt, # Use system/messages structure
+                        "messages": messages_for_second_call
+                    }
+                    second_response = call_claude_api(second_call_prompt_details, tools=None)
+                    final_response_obj_after_tool = second_response # Assign to correct return var
                     print("[DEBUG] Second Claude call successful.")
                 except Exception as e:
                      print(f"[ERROR] Error in second Claude call after tool use: {e}")
-                     narrative_text += f"\n[ERROR] Failed to get final narrative after tool use: {e}"
+                     processed_text += f"\n[ERROR] Failed to get final narrative after tool use: {e}"
             else:
-                narrative_text += "\n[ERROR] Claude client not available for second call after tool use."
-                final_response_obj = None
-        elif tool_calls_found and not tool_used_and_processed: # Found tool use, but didn't process any known/valid ones?
-             print(f"[WARNING] Tool use stop reason, but no recognized tool calls ({update_game_state_tool['name']}, {start_dialogue_tool['name']}, {end_dialogue_tool['name']}) were successfully processed.")
-             narrative_text += f"\n[Internal Note: Claude attempted an action that wasn't understood or applicable.]"
+                processed_text += "\n[ERROR] Claude client not available for second call after tool use."
+        
+        elif tool_calls_found: # Tool use stop reason, but no recognized tool *successfully processed* for a second call
+             print(f"[WARNING] Tool use stop reason, but no tool requiring a second call ({update_game_state_tool['name']}) was processed.")
+             # This path might be hit if only start/end dialogue were called but stop_processing wasn't set somehow? Or unknown tool.
+             processed_text += f"\n[Internal Note: Claude attempted an action that wasn't fully processed.]"
 
-    # --- Extract final narrative text (if no early exit) --- 
-    final_narrative_pieces = []
-    if final_response_obj and final_response_obj.content:
-        for block in final_response_obj.content:
+    # --- Extract final narrative text (if second call was made) --- 
+    # This text comes *only* from the second response object
+    if final_response_obj_after_tool and final_response_obj_after_tool.content:
+        final_narrative_pieces = []
+        for block in final_response_obj_after_tool.content:
             if block.type == 'text':
                 final_narrative_pieces.append(block.text)
+        # Overwrite processed_text with only the result from the second call
+        processed_text = "\n".join(final_narrative_pieces).strip()
         
-        # Combine pre-tool text (if any) with final text blocks
-        full_narrative = narrative_text + "\n" + "\n".join(final_narrative_pieces)
-        narrative_text = full_narrative.strip()
+    # --- Final checks if no text was generated --- 
+    # Check if processed_text is still empty after all steps
+    if not processed_text.strip():
+        if initial_response.stop_reason != "tool_use": # If it wasn't tool use, it should have generated text
+            print(f"[WARNING] No narrative text found in non-tool-use Claude response. Stop Reason: {initial_response.stop_reason}. Content: {initial_response.content}")
+            processed_text = f"[Internal Note: Claude responded but provided no narrative text. Stop Reason: {initial_response.stop_reason}]"
+        elif not final_response_obj_after_tool: # Tool use occurred, but second call failed or wasn't made, and no pre-tool text existed
+             processed_text = "[Internal Note: Action processed, but no final narrative generated.]" # Default message
 
-        if not narrative_text.strip() and not tool_used_and_processed:
-             print(f"[WARNING] No narrative text found in final Claude response. Stop Reason: {final_response_obj.stop_reason}. Content: {final_response_obj.content}")
-             narrative_text = f"[Internal Note: Claude responded but provided no narrative text. Stop Reason: {final_response_obj.stop_reason}]"
-    elif not narrative_text.strip(): # No text collected at all
-        narrative_text = "[ERROR] Failed to get valid final narrative content from Claude."
-        final_response_obj = None # Ensure obj is None if text extraction failed
-
-    return narrative_text.strip(), final_response_obj # Return text AND the final object
+    # Return all components
+    return processed_text.strip(), initial_response_obj, tool_results_content_sent, final_response_obj_after_tool, stop_processing_flag
 
 # --- Prompt Construction ---
 
@@ -821,104 +850,77 @@ def format_dialogue_history_for_prompt(history: list) -> str:
         formatted_lines.append(f"{speaker}: {utterance}")
     return "\n".join(formatted_lines)
 
-def handle_dialogue_turn(game_state: dict, player_utterance: str) -> str:
-    """Handles a single turn of dialogue between the player and a character.
+def handle_dialogue_turn(game_state: dict, player_utterance: str) -> tuple[anthropic.types.Message | None, dict]:
+    """Prepares and initiates the LLM call for a single dialogue turn.
+
+    Adds player utterance to history, constructs prompt details, calls API
+    with the end_dialogue tool enabled, and returns the raw response object
+    and the prompt details used.
+    Response processing (text extraction, tool handling, state changes, history update)
+    is now done by handle_claude_response in the main loop.
 
     Args:
         game_state: The current game state dictionary.
         player_utterance: The raw input string from the player.
 
     Returns:
-        The character's dialogue response string.
+        A tuple containing:
+        - The raw Anthropic Message object from the API call, or None on failure.
+        - The prompt_details dictionary used for the API call.
     """
     partner_id = game_state.get('dialogue_partner')
-    if not partner_id or partner_id not in game_state['companions']:
-        print("[ERROR] Dialogue active but no valid partner found.")
-        # Attempt to recover or end dialogue?
-        game_state['dialogue_active'] = False # Simple recovery: end dialogue
-        return "(The connection fades... your dialogue partner seems to have vanished.)"
+    prompt_details_dialogue = {} # Initialize for return in case of early exit
+    response_obj = None # Initialize response object
 
-    print(f"[DEBUG] Handling dialogue turn with partner: {partner_id}")
+    if not partner_id or partner_id not in game_state['companions']:
+        print("[ERROR] Dialogue active but no valid partner found in handle_dialogue_turn.")
+        game_state['dialogue_active'] = False # End dialogue on error
+        return None, prompt_details_dialogue
+
+    print(f"[DEBUG] Preparing dialogue turn with partner: {partner_id}")
     companion_state = game_state['companions'][partner_id]
-    memory = companion_state.setdefault('memory', {'dialogue_history': []}) # Ensure memory exists
+    memory = companion_state.setdefault('memory', {'dialogue_history': []})
     dialogue_history = memory.setdefault('dialogue_history', [])
 
     # 1. Add player utterance to history
     dialogue_history.append({"speaker": "player", "utterance": player_utterance})
-    # TODO: Consider history length limit per character?
 
-    # 2. Prepare prompt for LLM
+    # 2. Prepare prompt details for LLM
     try:
-        dialogue_prompt_template = PROMPT_TEMPLATES["dialogue_system"]
-        
-        # Format history for the prompt
-        history_string = format_dialogue_history_for_prompt(dialogue_history)
-
-        # TODO: Decide which LLM to use for dialogue (Claude assumed for now)
-        # For Claude, we need messages format. Let's adapt.
-        # Constructing messages list similar to narrative but using dialogue history
-        # System prompt needs filling
-        system_prompt = dialogue_prompt_template # Use the whole template as system for now?
-        system_prompt = system_prompt.replace("{{character_name}}", companion_state.get('name', partner_id))
-        system_prompt = system_prompt.replace("{{relation_to_player_summary}}", companion_state.get('relation_to_player_summary', 'Unknown'))
-        system_prompt = system_prompt.replace("{{location}}", game_state.get('location', 'Unknown'))
-        system_prompt = system_prompt.replace("{{time_of_day}}", game_state.get('time_of_day', 'Unknown'))
-        # The template itself includes placeholders for history and utterance - might need rethinking
-        # Let's simplify - put context in system, history in messages
-
         # --- Revised Prompt Construction --- #
-        system_context = f"You are {companion_state.get('name', partner_id)}. Your relationship with the player is: {companion_state.get('relation_to_player_summary', 'Unknown')}. Location: {game_state.get('location', 'Unknown')}, Time: {game_state.get('time_of_day', 'Unknown')}. Respond naturally in character. ONLY provide dialogue, no narration or OOC text."
+        system_context = f"You are {companion_state.get('name', partner_id)}. Your relationship with the player is: {companion_state.get('relation_to_player_summary', 'Unknown')}. Location: {game_state.get('location', 'Unknown')}, Time: {game_state.get('time_of_day', 'Unknown')}. Respond naturally in character. ONLY provide dialogue, no narration or OOC text. You MUST use the end_dialogue tool IMMEDIATELY after any natural farewell utterance (e.g., 'Goodbye', 'Farewell', 'I must go now'). Do NOT use the tool otherwise." # Added stronger instruction for tool use
 
         messages_for_llm = []
         # Convert dialogue history to Claude message format
         for entry in dialogue_history:
             role = "user" if entry["speaker"] == "player" else "assistant"
+            # Ensure content is always a list of blocks, even for simple text
+            content_block = [{"type": "text", "text": entry["utterance"]}]
             messages_for_llm.append({
-                "role": role, 
-                "content": [{"type": "text", "text": entry["utterance"]}]
+                "role": role,
+                "content": content_block
             })
 
-        # Ensure the last message is the player's current utterance (already added to history)
-        # The history already includes the latest player utterance, so messages_for_llm is ready.
-
-        # --- Prepare call --- # 
+        # --- Prepare call --- #
         prompt_details_dialogue = {
             "system": system_context,
             "messages": messages_for_llm
         }
-        
-        print(f"\n>>> Asking {companion_state.get('name', partner_id)} for response... <<<")
-        # Call Claude API - IMPORTANT: No tools for dialogue responses!
-        # Need to ensure call_claude_api can be called without the 'tools' parameter or with tools=None
-        # Let's assume call_claude_api handles tools=None gracefully or we modify it later.
-        # TODO: Verify/modify call_claude_api for tool-less calls.
-        response_obj = call_claude_api(prompt_details_dialogue, tools=None) # Explicitly pass tools=None
 
-        # 3. Process response
-        if response_obj and response_obj.content and isinstance(response_obj.content, list):
-            # Assuming the first text block is the response
-            character_response_text = ""
-            for block in response_obj.content:
-                if block.type == 'text':
-                    character_response_text = block.text.strip()
-                    break # Take the first text block
-            
-            if not character_response_text:
-                 print("[WARN] LLM response for dialogue was empty or not text.")
-                 character_response_text = "(They remain silent.)" # Fallback
-        else:
-            print("[ERROR] Failed to get valid dialogue response from LLM.")
-            character_response_text = "(They seem lost in thought...)" # Fallback
+        print(f"\\n>>> Asking {companion_state.get('name', partner_id)} for response... (End dialogue tool available) <<<")
+        # IMPORTANT: Pass ONLY the end_dialogue tool
+        dialogue_tools = [end_dialogue_tool]
+        response_obj = call_claude_api(prompt_details_dialogue, tools=dialogue_tools)
+
+        # REMOVED: Response processing and history update logic - moved to handle_claude_response call in main loop
 
     except Exception as e:
-        print(f"[ERROR] Exception during dialogue turn LLM call: {e}")
-        character_response_text = "(An awkward silence hangs in the air...)" # Fallback
+        print(f"[ERROR] Exception during dialogue turn LLM call preparation or invocation: {e}")
+        # Return None and empty details on error
+        return None, {}
 
-    # 4. Add character response to history
-    dialogue_history.append({"speaker": partner_id, "utterance": character_response_text})
-
-    # 5. Return character response for display
-    return character_response_text
+    # 5. Return the RAW response object and prompt details
+    return response_obj, prompt_details_dialogue
 
 def summarize_conversation(dialogue_history: list) -> str:
     """Summarizes a given dialogue history using an LLM.
@@ -991,111 +993,178 @@ def main():
             print("Goodbye!")
             break
 
-        # --- REMOVED: Basic Input Parsing (Dialogue Start Check) --- #
-        # Dialogue start/end is now handled via Tool Use by Claude
-        # dialogue_start_match = re.match(r"talk to (.+)", player_input_raw, re.IGNORECASE)
-        # ... (removed parsing logic) ...
-        # --- End Basic Input Parsing --- #
-
         # ----------------------------------------
         # --- DIALOGUE VS NARRATIVE ROUTING --- #
         # ----------------------------------------
         if game_state['dialogue_active']:
-            # --- Handle Dialogue Turn (including End Check) --- #
+            # --- Handle Dialogue Turn --- #
             print("[DEBUG] Dialogue active.")
 
-            # --- REMOVED: Check for end command BEFORE calling handler --- #
-            # Dialogue end is now handled via Tool Use by Claude
-            # if player_input_raw.lower() in ['goodbye', 'farewell', 'leave']:
-            #    ... (removed end dialogue logic) ...
-            # else:
-            # Continue dialogue: Call handler
-            
-            # In dialogue mode, ALL player input goes to the handler
-            dialogue_response = handle_dialogue_turn(game_state, player_input_raw)
-            # The response is displayed as the "narrative" for this turn
-            # Ensure partner_id is still valid after handle_dialogue_turn (it checks internally)
-            partner_id = game_state.get('dialogue_partner') 
-            if partner_id: # Check if dialogue didn't end unexpectedly inside handler
-                partner_name = game_state.get('companions', {}).get(partner_id, {}).get('name', 'Character')
-                narrative_text = f"{partner_name}: {dialogue_response}"
-            else: # Dialogue partner became invalid (e.g., error in handler)
-                narrative_text = dialogue_response # Use the fallback message from handler
-            
+            # 1. Call handler to prepare prompt, add player utterance to history, and call API
+            dialogue_response_obj, dialogue_prompt_details = handle_dialogue_turn(game_state, player_input_raw)
+
+            # 2. Process the raw response using handle_claude_response
+            # Unpack all 5 return values now
+            processed_text, initial_resp_obj_dlg, _, final_resp_obj_dlg, stop_processing_dlg = handle_claude_response(
+                initial_response=dialogue_response_obj,
+                prompt_details=dialogue_prompt_details,
+                game_state=game_state
+            )
+
+            # 3. Update Character Dialogue History (if dialogue didn't just end - check stop_processing_dlg)
+            if not stop_processing_dlg: # Only update history if end_dialogue wasn't called
+                partner_id = game_state.get('dialogue_partner')
+                # Use initial_resp_obj_dlg as it contains the assistant's utterance when no tool was used
+                assistant_utterance = ""
+                if initial_resp_obj_dlg and initial_resp_obj_dlg.content:
+                     for block in initial_resp_obj_dlg.content:
+                         if block.type == 'text':
+                             assistant_utterance = block.text.strip()
+                             break # Take first text block
+                
+                if partner_id and partner_id in game_state.get('companions', {}) and assistant_utterance:
+                    print(f"[DEBUG MAIN] Updating dialogue history for {partner_id} with assistant utterance.")
+                    memory = game_state['companions'][partner_id].setdefault('memory', {'dialogue_history': []})
+                    dialogue_history = memory.setdefault('dialogue_history', [])
+                    if not dialogue_history or dialogue_history[-1].get("speaker") != partner_id:
+                         dialogue_history.append({"speaker": partner_id, "utterance": assistant_utterance})
+                    else:
+                         print(f"[DEBUG MAIN] Skipping dialogue history update for {partner_id} - might be duplicate.")
+                elif partner_id and not assistant_utterance:
+                     print(f"[DEBUG MAIN] No assistant utterance found in dialogue response for {partner_id}.")
+            else:
+                 print(f"[DEBUG MAIN] Dialogue stopped processing (likely ended), skipping character history update.")
+
+            # 4. Set text for display
+            narrative_text = processed_text
             placeholder_output = "[Visuals/Sounds suppressed during dialogue]"
-            # NOTE: Main conversation_history is NOT updated here.
 
         else:
             # --- Handle Narrative Turn --- #
-            # Narrative uses the main conversation_history for Claude context
             print("[DEBUG] Narrative turn. Proceeding with Claude/Gemini...")
+            
             # --- Append User Message to History --- 
+            # Do this *before* calling Claude for the current turn
             user_message = {"role": "user", "content": player_input_raw}
             conversation_history.append(user_message)
             # --- Truncate History (Optional but Recommended) ---
-            # Keep roughly the last N turns (2*N messages)
-            MAX_HISTORY_MESSAGES = 20 # Example: Keep last 10 turns
+            MAX_HISTORY_MESSAGES = 20
             if len(conversation_history) > MAX_HISTORY_MESSAGES:
                 print(f"[DEBUG] Truncating history from {len(conversation_history)} to {MAX_HISTORY_MESSAGES} messages.")
                 conversation_history = conversation_history[-MAX_HISTORY_MESSAGES:]
             # ----------------------------------------
 
-            # 2. Update State with Player Action (for context in THIS turn's prompt)
+            # 2. Update State with Player Action (for context)
             game_state['last_player_action'] = player_input_raw
 
-            # 3. Construct Claude Prompt (now passing history)
+            # 3. Construct Claude Prompt (using the potentially truncated history)
             prompt_details = construct_claude_prompt(game_state, conversation_history)
 
             # 4. Call Claude API & Handle Response (Tool Use)
             print("\n>>> Processing Player Action... Asking Claude for narrative... <<<")
-            # Pass all available tools to Claude during narrative turns
             available_tools = [update_game_state_tool, start_dialogue_tool, end_dialogue_tool]
-            claude_response_obj = call_claude_api(prompt_details, tools=available_tools)
-            narrative_text, final_response_obj = handle_claude_response(
-                initial_response=claude_response_obj,
+            # Call API - gets the initial response (might contain tool_use)
+            initial_claude_response_obj = call_claude_api(prompt_details, tools=available_tools)
+            
+            # Process the response - unpack all 5 return values
+            processed_text, initial_resp_obj_narr, tool_results_sent, final_resp_obj_narr, stop_processing_narr = handle_claude_response(
+                initial_response=initial_claude_response_obj,
                 prompt_details=prompt_details,
                 game_state=game_state
             )
             
-            # --- Append Assistant Message to History --- 
-            if final_response_obj:
-                # Reconstruct the message dict {role, content} for history storage
-                assistant_content_for_history = []
-                if final_response_obj.content:
-                    assistant_content_for_history = [block.model_dump(exclude_unset=True) for block in final_response_obj.content]
+            # --- CORRECTED History Update Logic for Narrative --- 
+            if initial_resp_obj_narr and initial_resp_obj_narr.stop_reason == "tool_use":
+                print("[DEBUG MAIN] Tool used in narrative turn. Updating history sequence.")
+                # 1. Append Assistant's message containing the tool_use request(s)
+                assistant_tool_use_message = {
+                    "role": initial_resp_obj_narr.role,
+                    "content": [block.model_dump(exclude_unset=True) for block in initial_resp_obj_narr.content if block] 
+                }
+                conversation_history.append(assistant_tool_use_message)
+                print(f"[DEBUG MAIN] Appended assistant tool_use message to history.")
+
+                # 2. Append User's tool_result message(s) - MANDATORY for API compliance
+                tool_results_for_history = []
+                for block in initial_resp_obj_narr.content:
+                    if block.type == "tool_use":
+                        tool_name = block.name
+                        tool_use_id = block.id
+                        # Determine result content based on tool (can be simple confirmations)
+                        if tool_name == "start_dialogue":
+                            result_content = "Dialogue started successfully."
+                        elif tool_name == "end_dialogue":
+                            result_content = "Dialogue ended successfully."
+                        elif tool_name == "update_game_state":
+                             # Find the corresponding result text we prepared earlier
+                             # Note: tool_results_sent is the list prepared *for the API*, not a simple string
+                             result_block_content = "State update processed."
+                             if tool_results_sent: # Check if the list was populated
+                                 for sent_result in tool_results_sent:
+                                     if sent_result.get('tool_use_id') == tool_use_id:
+                                         result_block_content = sent_result.get('content', result_block_content)
+                                         break # Found the matching result
+                             result_content = result_block_content
+                        else:
+                            result_content = f"Tool '{tool_name}' processed."
+                        
+                        tool_results_for_history.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_use_id,
+                            "content": result_content # API expects string content here
+                        })
                 
+                if tool_results_for_history:
+                    user_tool_result_message = {
+                        "role": "user",
+                        "content": tool_results_for_history # Send the list of result blocks
+                    }
+                    conversation_history.append(user_tool_result_message)
+                    print(f"[DEBUG MAIN] Appended user tool_result message(s) to history: {json.dumps(tool_results_for_history)}")
+                
+                # 3. Append Assistant's final response AFTER tool use (if applicable - only for update_game_state)
+                if final_resp_obj_narr:
+                    assistant_final_message = {
+                        "role": final_resp_obj_narr.role,
+                        "content": [block.model_dump(exclude_unset=True) for block in final_resp_obj_narr.content if block]
+                    }
+                    conversation_history.append(assistant_final_message)
+                    print(f"[DEBUG MAIN] Appended final assistant message after tool use to history.")
+            
+            elif initial_resp_obj_narr: # No tool use, just a normal assistant response
+                print("[DEBUG MAIN] No tool use in narrative turn. Appending standard assistant message.")
                 assistant_message = {
-                    "role": final_response_obj.role,
-                    "content": assistant_content_for_history
+                    "role": initial_resp_obj_narr.role,
+                    "content": [block.model_dump(exclude_unset=True) for block in initial_resp_obj_narr.content if block]
                 }
                 conversation_history.append(assistant_message)
             else:
-                # Handle case where response failed; maybe add placeholder?
-                print("[WARN] No valid final response object from Claude to add to history.")
-                # Optionally add a placeholder error message to history?
-            # ----------------------------------------
+                # Handle case where initial call failed
+                print("[WARN MAIN] No valid initial response object from Claude to add to history.")
+            # ------------------------------------------------------
 
-            # --- Error Handling for Narrative --- 
-            if narrative_text.startswith("[ERROR]") or narrative_text.startswith("[Internal"):
-                print(f"\n[SYSTEM MESSAGE]\n{narrative_text}")
+            # --- Error Handling & Gemini Call --- 
+            # Check for errors in the *final* processed text
+            if processed_text.startswith("[ERROR]") or processed_text.startswith("[Internal"):
+                print(f"\n[SYSTEM MESSAGE]\n{processed_text}")
                 display_output("(The world seems to pause, recovering from an unseen ripple...)", None)
-                game_state['last_player_action'] = "None" # Clear action even on error
-                continue # Skip Gemini call and proceed to next turn
+                game_state['last_player_action'] = "None"
+                continue 
 
-            # 5. Construct & Call Gemini for Placeholders
-            print("\n>>> Asking Gemini for scene details... <<<")
-            gemini_prompt = construct_gemini_prompt(narrative_text, game_state)
-            placeholder_output = call_gemini_api(gemini_prompt)
-
-        # ----------------------------------------
+            # 5. Construct & Call Gemini (only if dialogue didn't start/end)
+            if not stop_processing_narr: # Check the flag from handle_claude_response
+                 print("\n>>> Asking Gemini for scene details... <<<")
+                 gemini_prompt = construct_gemini_prompt(processed_text, game_state)
+                 placeholder_output = call_gemini_api(gemini_prompt)
+            else:
+                 print("[DEBUG MAIN] stop_processing flag is True, skipping Gemini call.")
+                 placeholder_output = "[Placeholders suppressed due to dialogue transition]"
+            # ----------------------------------------
+        
         # --- END ROUTING --- #
-        # ----------------------------------------
 
-        # 6. Display Combined Output
-        display_output(narrative_text, placeholder_output)
-
-        # Clear last action for the next turn (still useful for prompt context)
-        # game_state['last_player_action'] = "None"
+        # 6. Display Combined Output (using processed_text from either branch)
+        display_output(processed_text, placeholder_output)
 
         # Simple loop condition for now
         if turn_count >= MAX_TURNS:
