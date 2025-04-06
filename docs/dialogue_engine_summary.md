@@ -31,14 +31,17 @@ The dialogue system operates based on these core principles:
     *   `start_dialogue_tool`: Allows Claude (during narrative turns) to initiate dialogue. Takes `character_id` as input. Processed by `handle_claude_response` to set `dialogue_active=True`.
     *   `end_dialogue_tool`: Allows Claude (during dialogue turns) to end the conversation. Takes no input. Processed by `handle_claude_response` to set `dialogue_active=False` and trigger summarization.
     *   `update_game_state_tool`: Used for general narrative state changes (location, inventory, flags). Not directly part of dialogue *flow*, but handled by the same response processing logic.
+    *   **`exchange_item_tool` (NEW - Dialogue Only):** Allows Claude (during dialogue turns, after agreement) to transfer items between the player and the dialogue partner. Calls `CharacterManager` methods for inventory updates.
+    *   **`update_relationship_tool` (NEW - Dialogue Only):** Allows Claude (during dialogue turns, for significant moments) to modify trust or apply/remove statuses (like anger) for the dialogue partner. Calls `CharacterManager` methods for relationship updates.
+    *   **`create_character_tool` (NEW - Narrative Only):** Allows Claude (during narrative turns) to generate a new character using `CharacterManager`.
 
 *   **`main()` Function (Game Loop):**
     *   Checks `game_state['dialogue_active']` at the start of each turn.
     *   **Narrative Branch (`else` block):**
         *   Appends player input to `conversation_history`.
-        *   Calls `call_claude_api` with all tools (`start_dialogue`, `end_dialogue`, `update_game_state`).
+        *   Calls `call_claude_api` with all narrative tools (`start_dialogue`, `update_game_state`, `create_character`).
         *   Calls `handle_claude_response` to process the result.
-        *   **Crucially, updates `conversation_history` with the full Assistant(`tool_use`) -> User(`tool_result`) sequence if a tool was used.**
+        *   **Crucially, updates `conversation_history` with the full Assistant(`tool_use`) -> User(`tool_result: ...`) sequence if a tool was used.**
         *   Calls Gemini for placeholders if `stop_processing_flag` is False.
     *   **Dialogue Branch (`if` block):**
         *   Calls `handle_dialogue_turn`.
@@ -48,21 +51,20 @@ The dialogue system operates based on these core principles:
 
 *   **`handle_dialogue_turn()` Function:**
     *   Called only when `dialogue_active` is `True`.
-    *   Appends the `player_utterance` to the current `dialogue_partner`'s specific `dialogue_history`.
-    *   Constructs a dialogue-specific prompt using character details and their `dialogue_history`. Includes system instructions encouraging `end_dialogue` tool use for farewells.
-    *   Calls `call_claude_api` passing *only* the `end_dialogue_tool`.
+    *   Constructs a dialogue-specific prompt using character details (fetched via `CharacterManager`, including inventory, trust, statuses) and their `dialogue_history`. Includes system instructions encouraging appropriate tool use (`end_dialogue`, `exchange_item`, `update_relationship`).
+    *   Calls `call_claude_api` passing all dialogue tools (`end_dialogue`, `exchange_item`, `update_relationship`).
     *   Returns the raw API response object (`Message`) and prompt details.
 
 *   **`handle_claude_response()` Function:**
     *   Receives the raw `Message` object from `call_claude_api` (from either narrative or dialogue branch).
     *   Checks `initial_response.stop_reason`.
     *   If `"tool_use"`:
-        *   Identifies the tool (`start_dialogue`, `end_dialogue`, `update_game_state`).
-        *   Executes state changes (modifies `game_state['dialogue_active']`, `dialogue_partner`).
+        *   Identifies the tool (`start_dialogue`, `end_dialogue`, `update_game_state`, `create_character`, `exchange_item`, `update_relationship`).
+        *   Executes state changes (modifies `game_state['dialogue_active']`, `dialogue_partner`, calls `CharacterManager` methods for character creation, inventory, or relationship updates).
         *   Calls `summarize_conversation` if `end_dialogue` is used.
-        *   Adds appropriate feedback text (e.g., "(Conversation ends.)") to the `processed_text`.
-        *   Sets `stop_processing_flag = True` for `start_dialogue` and `end_dialogue`.
-        *   Handles the second API call logic for `update_game_state`.
+        *   Adds appropriate feedback text (e.g., "(Conversation ends.)", "(Item exchange attempted.)") to the `processed_text`.
+        *   Sets `stop_processing_flag = True` for state-changing tools (`start_dialogue`, `end_dialogue`, `create_character`, `exchange_item`, `update_relationship`).
+        *   Handles the second API call logic only for `update_game_state` (if it wasn't flagged to stop).
     *   Extracts text content from the appropriate response object (initial or second call).
     *   Returns a 5-tuple `(processed_text, initial_response_obj, tool_results_content_sent, final_response_obj_after_tool, stop_processing_flag)` containing all necessary info for the main loop.
 

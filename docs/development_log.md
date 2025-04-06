@@ -170,6 +170,30 @@
 *   **Next:** Test history implementation. Refine prompts or add other features.
 
 **YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Implement and debug enhanced dialogue tools (item exchange, relationship updates).
+*   **Input Context:** Successful test of character generation and basic dialogue initiation. Decision to proceed with adding dialogue interaction tools.
+*   **Discussion & Actions:**
+    *   **Defined Tools:** Added `exchange_item_tool` and `update_relationship_tool` schemas to `config.py`.
+    *   **Enabled Tools in Dialogue:** Modified `dialogue.py::handle_dialogue_turn` to include the new tools in the list passed to the LLM API call.
+    *   **Updated Dialogue Prompt:** Significantly revised `prompts/dialogue_system.txt` to:
+        *   Include placeholders for character context (inventory, trust score, statuses).
+        *   Provide detailed descriptions and usage guidelines for all three dialogue tools (`end_dialogue`, `exchange_item`, `update_relationship`).
+        *   Instruct the LLM on how character state should influence behavior and tool use.
+    *   **Added Context Fetching:** Modified `dialogue.py::handle_dialogue_turn` to fetch inventory, trust, and status data using `CharacterManager` and format it for the prompt placeholders.
+    *   **Implemented Tool Handling:** Added `elif` branches in `main.py::handle_claude_response` to process calls to `exchange_item_tool` and `update_relationship_tool`, extracting parameters and calling the relevant (initially placeholder) `CharacterManager` methods.
+    *   **Implemented Character Manager Methods:** Implemented the core logic for inventory (`add_item`, `remove_item`, `has_item`) and relationship methods (`update_trust`, `set_status`, `remove_status`, `decrement_statuses`) in `character_manager.py`.
+    *   **Implemented Item Exchange Logic:** Added logic in `main.py::handle_claude_response` for `exchange_item_tool` to handle transfers involving both player inventory and `CharacterManager` methods, including checks and basic rollback attempt.
+    *   **Debugging Dialogue Errors:** 
+        *   Fixed `IndexError` in `dialogue.py::handle_dialogue_turn` caused by redundant prompt formatting after context insertion.
+        *   Escaped `{}` -> `{{}}` in prompt examples (`prompts/dialogue_system.txt`) to prevent formatting errors.
+        *   Fixed `KeyError: 'content'` in `dialogue.py::handle_dialogue_turn` by correctly accessing `"utterance"` when building API message history.
+        *   Fixed `NameError` in `main.py::handle_claude_response` by adding missing imports for `exchange_item_tool` and `update_relationship_tool` from `config.py`.
+*   **Affected Files/State:** Modified `config.py`, `dialogue.py`, `main.py`, `character_manager.py`, `prompts/dialogue_system.txt`, `docs/development_log.md` (this entry).
+*   **Decision:** Proceeded with implementing and debugging the core logic for dialogue-driven item exchange and relationship updates.
+*   **Current Status:** Dialogue system includes tools for ending conversation, exchanging items, and updating relationships. Core logic for processing these tools and updating state via `CharacterManager` is implemented. Dialogue prompts provide context (inventory, trust, status) and tool usage instructions. Basic functionality appears stable after debugging.
+*   **Next:** Thorough testing of the new dialogue tools (item exchange variations, trust changes, status effects). Further prompt refinement based on testing.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
 *   **Goal:** Debug character generation and dialogue initiation, confirm tool usage.
 *   **Input Context:** Previous tests showed Claude failing to use `create_character` tool appropriately and dialogue failing due to `NameError` and incorrect character ID usage.
 *   **Discussion & Actions:**
@@ -182,21 +206,6 @@
 *   **Future Work / Note:** The `DEBUG_IGNORE_LOCATION` flag is a temporary measure. A more robust location management system will be needed in the future to handle character presence based on actual game world locations, at which point this flag should be set to `False` or removed.
 *   **Current Status:** Core character management (creation, storage, basic retrieval) and dynamic generation via LLM tool calls are functional. Dialogue can be initiated with generated characters. Location checks are temporarily bypassed for testing.
 *   **Next:** Proceed with implementing the enhanced dialogue mechanics (item exchange, relationship updates) using the `CharacterManager`'s placeholder methods.
-
-**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
-*   **Goal:** Implement core CharacterManager methods and temporary location bypass for debugging.
-*   **Input Context:** Errors encountered during testing (`AttributeError: 'CharacterManager' object has no attribute 'get_trust'`, `TypeError: construct_gemini_prompt() got an unexpected keyword argument 'character_manager'`), and observation that location discrepancies were preventing dialogue testing.
-*   **Discussion & Actions:**
-    *   **Character Manager Methods:** Implemented `get_trust` in `character_manager.py` to fix dialogue prompt formatting. Added placeholder implementations (with TODOs) for other core methods (`get_inventory`, `add_item`, `remove_item`, `has_item`, `_get_relationship_ref`, `update_trust`, `set_status`, `remove_status`, `get_active_statuses`, `decrement_statuses`, `set_location`) for future feature implementation.
-    *   **Gemini Call Fix:** Removed the `character_manager` argument from the `construct_gemini_prompt` call in `main.py` as it was causing a `TypeError` and wasn't needed yet.
-    *   **Location Bypass:** Implemented a temporary, reversible bypass for location logic to facilitate dialogue testing:
-        *   Added `DEBUG_IGNORE_LOCATION = True` flag to `config.py`.
-        *   Modified `narrative.py::apply_tool_updates` to skip player location updates if the flag is `True`.
-        *   Modified `narrative.py::construct_claude_prompt` to list all characters as present (ignoring location) if the flag is `True`.
-        *   Modified `main.py::handle_claude_response` (specifically the `start_dialogue_tool` logic) to skip the location check and assume presence if the flag is `True`.
-*   **Affected Files/State:** Modified `character_manager.py`, `config.py`, `narrative.py`, `main.py`, `docs/development_log.md` (this entry).
-*   **Decision:** Proceed with core CharacterManager methods added. Implement temporary location bypass for testing.
-*   **Next:** Retest dialogue initiation and basic narrative flow with location bypass active.
 
 **[Date - Placeholder] - Character Manager V1 Implementation**
 

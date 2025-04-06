@@ -66,8 +66,19 @@ This document summarizes the architecture, components, and functionality of the 
     *   `get_all_character_ids(self)`: Returns a list of all managed character IDs.
     *   `get_name(self, character_id)`: Retrieves character name.
     *   `get_location(self, character_id)`: Retrieves character location.
-    *   `get_trust(self, character_id, target_id='player')`: *(Implemented in dialogue.py usage, needs formal implementation in manager)* Retrieves trust score.
-    *   *(Placeholders/Future Work)*: Methods for `add_item`, `remove_item`, `update_trust`, `set_status`, `remove_status`, `decrement_statuses`, prompt helper strings, etc.
+    *   `set_location(self, character_id, location)`: Sets character location.
+    *   `get_inventory(self, character_id)`: Retrieves character inventory list.
+    *   `add_item(self, character_id, item)`: Adds item to character inventory.
+    *   `remove_item(self, character_id, item)`: Removes item from character inventory (checks existence).
+    *   `has_item(self, character_id, item)`: Checks if character has item.
+    *   `_get_relationship_ref(...)`: Internal helper for relationship data.
+    *   `get_trust(self, character_id, target_id='player')`: Retrieves trust score.
+    *   `update_trust(self, character_id, change, target_id='player')`: Updates trust score (with clamping).
+    *   `set_status(self, character_id, status_name, duration, target_id='player')`: Sets/updates a temporary status.
+    *   `remove_status(self, character_id, status_name, target_id='player')`: Removes a temporary status.
+    *   `get_active_statuses(self, character_id, target_id='player')`: Retrieves active status dictionary.
+    *   `decrement_statuses(self, character_id, target_id='player')`: Decrements status durations, removes expired ones.
+    *   *(Future Work)*: Prompt helper strings (e.g., `get_relationship_prompt_summary`, `get_inventory_string`).
 
 ## 4. Workflow Examples
 
@@ -109,13 +120,12 @@ This document summarizes the architecture, components, and functionality of the 
     *   `ARCHETYPE_CONFIG` defined with initial data for four archetypes.
     *   `create_character` method implemented for adding characters with specified data.
     *   `generate_character` method implemented with randomization based on archetype config.
-    *   Basic getter methods (`get_name`, `get_location`, etc.) implemented.
+    *   Core getter and modifier methods for inventory and relationships implemented.
     *   Integration points updated in `main.py`, `narrative.py`, `dialogue.py`.
     *   `create_character_tool` defined and handled in `main.py`.
 *   **Future Work:**
-    *   **Implement Modifier Methods:** Add core methods for manipulating state post-creation (inventory management: `add_item`, `remove_item`, `has_item`; relationship management: `update_trust`, `set_status`, `remove_status`, `decrement_statuses`).
-    *   **Refine Generation:** Improve name generation, potentially add more variety to descriptions, link item/trait pools more closely.
-    *   **Prompt Helpers:** Implement helper methods in the manager to return formatted strings suitable for LLM prompts (e.g., `get_relationship_prompt_summary`, `get_inventory_string`).
-    *   **File Persistence:** Explore saving/loading character state (potentially the whole `game_state`) to/from files for persistence between sessions.
-    *   **Testing:** Thoroughly test character generation and tool interaction.
-    *   **Integrate with Dialogue Features:** Use the planned modifier methods to implement the dialogue-driven inventory exchange and relationship updates.
+    *   Refine Generation: Improve name generation, potentially add more variety to descriptions, link item/trait pools more closely.
+    *   Prompt Helpers: Implement helper methods in the manager to return formatted strings suitable for LLM prompts (e.g., `get_relationship_prompt_summary`, `get_inventory_string`).
+    *   File Persistence: Explore saving/loading character state (potentially the whole `game_state`) to/from files for persistence between sessions.
+    *   Testing: Thoroughly test the implemented dialogue interaction tools (exchange, relationship updates).
+    *   Integrate with Dialogue Features: *(Completed)* Core logic for dialogue-driven inventory exchange and relationship updates is now implemented via tool handling in `main.py` and `CharacterManager` methods.
