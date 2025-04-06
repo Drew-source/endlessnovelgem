@@ -244,37 +244,36 @@ class CharacterManager:
         return None
 
     def add_item(self, character_id: str, item: str) -> bool:
-        """Adds an item to a character's inventory. (Placeholder)"""
-        # TODO: Implement actual logic
-        print(f"[TODO] Implement add_item for {character_id}: {item}")
+        """Adds an item to a character's inventory."""
         char_ref = self._get_character_ref(character_id)
         if char_ref:
             inv = char_ref.setdefault('inventory', [])
-            inv.append(item) # Simple append for now
+            inv.append(item)
+            print(f"  [State Update] Added '{item}' to inventory of {character_id}.")
             return True
         return False
 
     def remove_item(self, character_id: str, item: str) -> bool:
-        """Removes an item from a character's inventory. (Placeholder)"""
-        # TODO: Implement actual logic (check if item exists)
-        print(f"[TODO] Implement remove_item for {character_id}: {item}")
+        """Removes an item from a character's inventory. Returns True if item was found and removed, False otherwise."""
         char_ref = self._get_character_ref(character_id)
         if char_ref:
             inv = char_ref.setdefault('inventory', [])
             if item in inv:
                  try:
                      inv.remove(item)
+                     print(f"  [State Update] Removed '{item}' from inventory of {character_id}.")
                      return True
                  except ValueError:
-                     return False # Should not happen if 'in' check passed
+                     # Should not happen if 'in' check passed, but handle defensively
+                     print(f"[WARN] ValueError removing '{item}' from {character_id} despite 'in' check.")
+                     return False 
             else:
+                 print(f"[DEBUG] Item '{item}' not found in inventory of {character_id} for removal.")
                  return False # Item not found
         return False
 
     def has_item(self, character_id: str, item: str) -> bool:
-        """Checks if a character has a specific item. (Placeholder)"""
-        # TODO: Implement actual logic
-        print(f"[TODO] Implement has_item for {character_id}: {item}")
+        """Checks if a character has a specific item in their inventory."""
         inv = self.get_inventory(character_id)
         return item in inv if inv is not None else False
 
@@ -293,38 +292,46 @@ class CharacterManager:
         return rel_ref.get('trust', 0) if rel_ref else None # Default to 0 if structure missing
 
     def update_trust(self, character_id: str, change: int, target_id: str = 'player') -> bool:
-        """Updates the trust score towards a target. (Placeholder)"""
-        # TODO: Implement actual logic (apply change, clamp values)
-        print(f"[TODO] Implement update_trust for {character_id} -> {target_id}: {change}")
+        """Updates the trust score towards a target, clamping between -100 and 100."""
         rel_ref = self._get_relationship_ref(character_id, target_id)
         if rel_ref:
             current_trust = rel_ref.get('trust', 0)
             new_trust = max(-100, min(100, current_trust + change))
-            rel_ref['trust'] = new_trust
-            return True
+            if new_trust != current_trust:
+                rel_ref['trust'] = new_trust
+                print(f"  [State Update] Trust for {character_id} -> {target_id} set to {new_trust}.")
+                return True
+            else:
+                # No change occurred (already at min/max)
+                return True # Still counts as success, just no change
         return False
 
     def set_status(self, character_id: str, status_name: str, duration: int, target_id: str = 'player') -> bool:
-        """Sets a temporary status with a duration. (Placeholder)"""
-        # TODO: Implement actual logic
-        print(f"[TODO] Implement set_status for {character_id} -> {target_id}: {status_name}={duration}")
+        """Sets or updates a temporary status with a duration."""
+        if duration <= 0:
+            print(f"[WARN] Attempted to set status '{status_name}' with non-positive duration ({duration}). Removing instead.")
+            return self.remove_status(character_id, status_name, target_id)
+        
         rel_ref = self._get_relationship_ref(character_id, target_id)
         if rel_ref:
             statuses = rel_ref.setdefault('temporary_statuses', {})
             statuses[status_name] = {'duration': duration}
+            print(f"  [State Update] Status '{status_name}' set for {character_id} -> {target_id} ({duration} turns)." )
             return True
         return False
 
     def remove_status(self, character_id: str, status_name: str, target_id: str = 'player') -> bool:
-        """Removes a temporary status. (Placeholder)"""
-        # TODO: Implement actual logic
-        print(f"[TODO] Implement remove_status for {character_id} -> {target_id}: {status_name}")
+        """Removes a temporary status if it exists."""
         rel_ref = self._get_relationship_ref(character_id, target_id)
         if rel_ref:
             statuses = rel_ref.setdefault('temporary_statuses', {})
             if status_name in statuses:
                 del statuses[status_name]
+                print(f"  [State Update] Status '{status_name}' removed for {character_id} -> {target_id}." )
                 return True
+            else:
+                # Status wasn't present, but that's not an error in removal
+                return True 
         return False
 
     def get_active_statuses(self, character_id: str, target_id: str = 'player') -> dict | None:
@@ -333,20 +340,23 @@ class CharacterManager:
         return rel_ref.get('temporary_statuses') if rel_ref else None
 
     def decrement_statuses(self, character_id: str, target_id: str = 'player') -> list[str]:
-        """Decrements duration of statuses, removes expired ones. (Placeholder)"""
-        # TODO: Implement actual logic
-        print(f"[TODO] Implement decrement_statuses for {character_id} -> {target_id}")
+        """Decrements duration of all active statuses, removes expired ones. Returns list of removed statuses."""
         removed_statuses = []
         rel_ref = self._get_relationship_ref(character_id, target_id)
         if rel_ref:
             statuses = rel_ref.setdefault('temporary_statuses', {})
+            if not statuses: return [] # No statuses to decrement
+            
+            print(f"[DEBUG] Decrementing statuses for {character_id} -> {target_id}...")
             # Iterate over a copy of keys as we might modify the dict
             for status_name in list(statuses.keys()): 
                 if 'duration' in statuses[status_name]:
                     statuses[status_name]['duration'] -= 1
+                    print(f"  Status '{status_name}' duration: {statuses[status_name]['duration']}")
                     if statuses[status_name]['duration'] <= 0:
                         del statuses[status_name]
                         removed_statuses.append(status_name)
+                        print(f"    Removed status '{status_name}'.")
         return removed_statuses
 
     # --- Location Method ---

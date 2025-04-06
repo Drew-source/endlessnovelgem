@@ -99,3 +99,54 @@ create_character_tool = {
         # Making it not required here for flexibility, will handle default in Python if needed.
     }
 }
+
+# --- Dialogue Enhancement Tools --- #
+
+exchange_item_tool = {
+    "name": "exchange_item",
+    "description": "Transfers an item between the player and the current dialogue partner. ONLY use this tool AFTER conversational agreement from BOTH parties has been reached. Specify the item, quantity (default 1), giver, and receiver.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "item_name": {
+                "type": "string",
+                "description": "The exact name of the item being transferred."
+            },
+            "quantity": {
+                "type": "integer",
+                "description": "The number of items to transfer.",
+                "default": 1
+            },
+            "giver_id": {
+                "type": "string",
+                "description": "The ID of the character giving the item ('player' or the character_id of the dialogue partner)."
+            },
+            "receiver_id": {
+                "type": "string",
+                "description": "The ID of the character receiving the item ('player' or the character_id of the dialogue partner)."
+            }
+        },
+        "required": ["item_name", "giver_id", "receiver_id"]
+    }
+}
+
+update_relationship_tool = {
+    "name": "update_relationship",
+    "description": "Updates the relationship traits (like trust or temporary statuses like anger) between the player and the current dialogue partner based on significant conversational interactions (e.g., major agreements, betrayals, insults, heartfelt apologies). Use sparingly for impactful moments.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            # No companion_id needed, assumed to be current dialogue partner
+            "trait": {
+                "type": "string",
+                "description": "The relationship trait or status to update.",
+                "enum": ["trust", "anger"] # Expand later if needed
+            },
+            "change": {
+                "type": ["integer", "object"],
+                "description": "The change to apply. For 'trust', provide an integer (e.g., +1 for minor positive, -10 for major negative). For statuses like 'anger', provide an object like {'action': 'set', 'duration': 5} or {'action': 'remove'}."
+            }
+        },
+        "required": ["trait", "change"]
+    }
+}

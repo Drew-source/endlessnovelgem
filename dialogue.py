@@ -1,7 +1,7 @@
 """Dialogue Engine: Handles conversation flow, history, and summarization."""
 import anthropic
 import google.generativeai as genai
-from config import end_dialogue_tool # Import the specific tool needed
+from config import end_dialogue_tool, exchange_item_tool, update_relationship_tool # Import the specific tools needed
 from utils import call_claude_api
 from visuals import call_gemini_api # Needed for summarize_conversation
 from character_manager import CharacterManager # Import manager for type hint
@@ -69,44 +69,81 @@ def handle_dialogue_turn(
 
     # 2. Prepare prompt details for LLM
     try:
+        # --- Fetch Context Data using CharacterManager --- #
+        character_name = companion_state.get('name', partner_id)
+        trust_score = character_manager.get_trust(partner_id) or 0
+        active_statuses_dict = character_manager.get_active_statuses(partner_id) or {}
+        inventory_list = character_manager.get_inventory(partner_id) or []
+
+        # --- Format Context for Prompt --- #
+        # Basic trust description
+        if trust_score > 50: trust_level_description = "Very High (Friendly/Helpful)"
+        elif trust_score > 10: trust_level_description = "Positive (Neutral/Open)"
+        elif trust_score < -50: trust_level_description = "Very Low (Hostile/Distrustful)"
+        elif trust_score < -10: trust_level_description = "Negative (Wary/Uncooperative)"
+        else: trust_level_description = "Neutral"
+
+        # Active statuses string
+        status_strings = []
+        for status, data in active_statuses_dict.items():
+            duration = data.get('duration')
+            status_strings.append(f"{status.capitalize()}({duration} turns remaining)" if duration else status.capitalize())
+        active_statuses_str = ", ".join(status_strings) or "Normal"
+        
+        # Inventory string (limit length?)
+        inventory_str = ", ".join(inventory_list) or "Nothing"
+
+        # Character ID for prompt examples
+        character_id_str = partner_id
+
         # --- System Prompt Construction --- #
-        # Use the passed template and format it
         if "Error:" in dialogue_template:
              print(f"[WARN] Using fallback dialogue system prompt due to template load error: {dialogue_template}")
-             # Fallback prompt - similar to the old hardcoded one but less aggressive on ending
-             system_context = f"You are {companion_state.get('name', partner_id)}. Respond naturally in character based on history. ONLY provide dialogue. Use end_dialogue tool ONLY for clear farewells."
+             # Fallback should be minimal and mention tool unavailability
+             system_context = f"You are {character_name}. Respond naturally. Tool usage may be limited due to error."
         else:
             try:
+                 # Format the prompt with all the context
                  system_context = dialogue_template.format(
-                     character_name=companion_state.get('name', partner_id),
-                     # Use manager to get relationship info - placeholder for now
-                     # Need helper functions in manager (e.g., get_relationship_prompt_summary)
-                     relation_to_player_summary=f"Trust: {character_manager.get_trust(partner_id) or 0}", # Basic trust for now
+                     character_name=character_name,
+                     character_id=character_id_str, # Pass ID for tool examples
+                     trust_score=trust_score,
+                     relation_to_player_summary=trust_level_description,
+                     active_statuses=active_statuses_str,
+                     character_inventory=inventory_str,
                      location=game_state.get('location', 'Unknown'),
                      time_of_day=game_state.get('time_of_day', 'Unknown')
                  )
             except KeyError as e:
                  print(f"[ERROR] Missing key in dialogue system template: {e}. Using fallback prompt.")
-                 system_context = f"You are {companion_state.get('name', partner_id)}. Respond naturally. (Template key error: {e})"
+                 system_context = f"You are {character_name}. Respond naturally. (Template key error: {e})"
             except Exception as e:
                  print(f"[ERROR] Failed to format dialogue system template: {e}. Using fallback prompt.")
-                 system_context = f"You are {companion_state.get('name', partner_id)}. Respond naturally. (Template format error)"
+                 system_context = f"You are {character_name}. Respond naturally. (Template format error)"
         
-        # --- Message History Construction --- #
+        # --- Message History Construction (for API) --- #
         messages_for_llm = []
         for entry in dialogue_history:
             role = "user" if entry["speaker"] == "player" else "assistant"
-            content_block = [{"type": "text", "text": entry["utterance"]}]
+            # Correctly access the utterance and format as a content block
+            utterance = entry.get("utterance", "") # Get the utterance string
+            content_block = [{"type": "text", "text": utterance}] # Format for API
+                
             messages_for_llm.append({"role": role, "content": content_block})
+
+        # The dialogue_history and player_utterance are handled via the messages list.
+        # The system_context variable already contains the prompt formatted with character context.
+        # The redundant second formatting step is removed.
         
-        # --- Prepare call --- #
+        # --- Prepare API call --- #
         prompt_details_dialogue = {
-            "system": system_context,
-            "messages": messages_for_llm
+            "system": system_context, # Pass the context-formatted system prompt
+            "messages": messages_for_llm # Pass the history prepared for the API
         }
 
-        print(f"\n>>> Asking {companion_state.get('name', partner_id)} for response... (End dialogue tool available) <<<")
-        dialogue_tools = [end_dialogue_tool] # Use imported tool
+        print(f"\n>>> Asking {character_name} for response... (Tools: End Dialogue, Exchange Item, Update Relationship) <<<")
+        # Include all tools available during dialogue
+        dialogue_tools = [end_dialogue_tool, exchange_item_tool, update_relationship_tool]
         
         # Call API via utility function
         response_obj = call_claude_api(

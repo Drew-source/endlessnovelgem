@@ -9,7 +9,8 @@ import google.generativeai as genai
 
 # Import configuration, utilities, and engine modules
 from config import (MAX_TURNS, PROMPT_DIR, MAX_HISTORY_MESSAGES,
-                  update_game_state_tool, start_dialogue_tool, end_dialogue_tool, create_character_tool, DEBUG_IGNORE_LOCATION)
+                  update_game_state_tool, start_dialogue_tool, end_dialogue_tool, create_character_tool, DEBUG_IGNORE_LOCATION,
+                  exchange_item_tool, update_relationship_tool)
 from utils import load_prompt_template, call_claude_api
 from narrative import handle_narrative_turn, apply_tool_updates
 from dialogue import handle_dialogue_turn, summarize_conversation
@@ -285,6 +286,111 @@ def handle_claude_response(
                         print(f"[ERROR] Character generation failed for archetype '{archetype}'.")
                         processed_text += "\n[SYSTEM ERROR: Character creation failed.]"
                 
+                stop_processing_flag = True # Stop further processing this turn
+
+            elif tool_name == exchange_item_tool["name"]: # Added
+                print(f"[INFO] Handling exchange_item tool: {tool_input}")
+                item = tool_input.get('item_name')
+                giver = tool_input.get('giver_id')
+                receiver = tool_input.get('receiver_id')
+                quantity = tool_input.get('quantity', 1) # Use default from schema if needed
+
+                # Basic validation
+                if not all([item, giver, receiver]):
+                     print(f"[ERROR] exchange_item tool called with missing parameters: {tool_input}")
+                     processed_text += "\n[SYSTEM ERROR: Item exchange failed - missing info.]"
+                else:
+                    # --- Implement actual transfer logic --- 
+                    print(f"[INFO] Processing transfer: {quantity} x '{item}' from {giver} to {receiver}")
+                    transfer_possible = False
+                    item_removed = False
+                    item_added = False
+                    
+                    # Check if giver has the item
+                    giver_has_item = False
+                    if giver == 'player':
+                        giver_has_item = item in game_state['player'].setdefault('inventory', [])
+                    else:
+                        giver_has_item = character_manager.has_item(giver, item)
+
+                    if giver_has_item:
+                        # Attempt removal from giver
+                        if giver == 'player':
+                            try:
+                                game_state['player']['inventory'].remove(item)
+                                print(f"  [State Update] Removed '{item}' from player inventory.")
+                                item_removed = True
+                            except ValueError:
+                                print(f"[WARN] Item '{item}' not found in player inventory despite check.")
+                                item_removed = False
+                        else:
+                            item_removed = character_manager.remove_item(giver, item)
+
+                        # If removal succeeded, attempt adding to receiver
+                        if item_removed:
+                            if receiver == 'player':
+                                game_state['player']['inventory'].append(item)
+                                print(f"  [State Update] Added '{item}' to player inventory.")
+                                item_added = True
+                            else:
+                                item_added = character_manager.add_item(receiver, item)
+                            
+                            # Check if add succeeded (it should if remove did)
+                            if item_added:
+                                transfer_possible = True
+                            else:
+                                # Rollback: Add item back to giver if receiver add failed (should be rare)
+                                print(f"[ERROR] Failed to add item '{item}' to receiver '{receiver}' after removing from '{giver}'. Rolling back.")
+                                if giver == 'player':
+                                    game_state['player']['inventory'].append(item)
+                                else:
+                                     character_manager.add_item(giver, item) # Attempt rollback add
+                                transfer_possible = False
+                        else:
+                            print(f"[DEBUG] Failed to remove item '{item}' from giver '{giver}'. Transfer aborted.")
+                            transfer_possible = False
+                    else:
+                        print(f"[DEBUG] Giver '{giver}' does not have item '{item}'. Transfer aborted.")
+                        transfer_possible = False
+
+                    # Provide feedback based on outcome
+                    if transfer_possible:
+                        processed_text += f"\n(Item exchange successful: {item})"
+                    else:
+                        processed_text += f"\n(Item exchange failed for '{item}'. Check inventories or logic.)"
+                    
+                stop_processing_flag = True # Stop further processing this turn
+            
+            elif tool_name == update_relationship_tool["name"]: # Added
+                print(f"[INFO] Handling update_relationship tool: {tool_input}")
+                trait = tool_input.get('trait')
+                change = tool_input.get('change')
+                partner_id = game_state.get('dialogue_partner') # Target is always the current partner
+
+                if not partner_id:
+                     print(f"[ERROR] update_relationship tool called outside of active dialogue?")
+                     processed_text += "\n[SYSTEM ERROR: Cannot update relationship - not in dialogue.]"
+                elif not trait or change is None:
+                    print(f"[ERROR] update_relationship tool called with missing parameters: {tool_input}")
+                    processed_text += "\n[SYSTEM ERROR: Relationship update failed - missing info.]"
+                else:
+                     # --- TODO: Implement actual update logic using CharacterManager --- 
+                    print(f"[TODO] Attempting relationship update for {partner_id}: {trait}={change}")
+                    success = False # Placeholder
+                    if trait == 'trust' and isinstance(change, int):
+                         success = character_manager.update_trust(partner_id, change)
+                    elif trait == 'anger' and isinstance(change, dict) and 'action' in change:
+                         if change['action'] == 'set' and 'duration' in change:
+                              success = character_manager.set_status(partner_id, 'anger', change['duration'])
+                         elif change['action'] == 'remove':
+                              success = character_manager.remove_status(partner_id, 'anger')
+                    # Add other traits/statuses later
+
+                    if success:
+                         processed_text += f"\n(Relationship updated: {trait})" # Keep feedback minimal/internal?
+                    else:
+                         processed_text += f"\n(Relationship update failed for {trait}.)"
+
                 stop_processing_flag = True # Stop further processing this turn
 
             else: # Unknown tool
