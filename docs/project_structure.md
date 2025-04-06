@@ -5,6 +5,9 @@ This document provides the canonical representation of the project's directory a
 ```
 .
 ├── .env                        # API keys and model names (DO NOT COMMIT)
+├── flet_app.py                 # Main Flet UI application entry point
+├── settings.py                 # Flet UI settings page component (assumed based on import)
+├── game_state.json             # Saved game state (generated at runtime)
 ├── .gitignore                  # Specifies intentionally untracked files (e.g., venv, .env)
 ├── endlessnovelgem/
 │   ├── config.py               # Constants, tool definitions
@@ -12,7 +15,7 @@ This document provides the canonical representation of the project's directory a
 │   ├── visuals.py              # Gemini API interaction for placeholders
 │   ├── dialogue.py             # Dialogue turn handling, summarization
 │   ├── narrative.py            # Narrative turn handling, state updates
-│   ├── main.py                 # Main game execution script (entry point)
+│   ├── main.py                 # Original CLI entry point, provides core funcs for flet_app
 │   ├── game_v0_backup.py       # Original monolithic script (backup)
 │   ├── prompts/                # Directory for LLM prompt templates
 │   │   ├── claude_system.txt             # System prompt for Claude narrative
@@ -33,4 +36,4 @@ This document provides the canonical representation of the project's directory a
 └── requirements.txt            # Python package dependencies
 ```
 
-*Note: The `endlessnovelgem/` sub-directory reflects the project structure within the workspace.*
+_Note: The `endlessnovelgem/` sub-directory reflects the project structure within the workspace._
