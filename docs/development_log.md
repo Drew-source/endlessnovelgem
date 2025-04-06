@@ -169,6 +169,56 @@
 *   **Decision:** Proceed with simple truncation for V0 history management; document need for future enhancements.
 *   **Next:** Test history implementation. Refine prompts or add other features.
 
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Implement core CharacterManager methods and temporary location bypass for debugging.
+*   **Input Context:** Errors encountered during testing (`AttributeError: 'CharacterManager' object has no attribute 'get_trust'`, `TypeError: construct_gemini_prompt() got an unexpected keyword argument 'character_manager'`), and observation that location discrepancies were preventing dialogue testing.
+*   **Discussion & Actions:**
+    *   **Character Manager Methods:** Implemented `get_trust` in `character_manager.py` to fix dialogue prompt formatting. Added placeholder implementations (with TODOs) for other core methods (`get_inventory`, `add_item`, `remove_item`, `has_item`, `_get_relationship_ref`, `update_trust`, `set_status`, `remove_status`, `get_active_statuses`, `decrement_statuses`, `set_location`) for future feature implementation.
+    *   **Gemini Call Fix:** Removed the `character_manager` argument from the `construct_gemini_prompt` call in `main.py` as it was causing a `TypeError` and wasn't needed yet.
+    *   **Location Bypass:** Implemented a temporary, reversible bypass for location logic to facilitate dialogue testing:
+        *   Added `DEBUG_IGNORE_LOCATION = True` flag to `config.py`.
+        *   Modified `narrative.py::apply_tool_updates` to skip player location updates if the flag is `True`.
+        *   Modified `narrative.py::construct_claude_prompt` to list all characters as present (ignoring location) if the flag is `True`.
+        *   Modified `main.py::handle_claude_response` (specifically the `start_dialogue_tool` logic) to skip the location check and assume presence if the flag is `True`.
+*   **Affected Files/State:** Modified `character_manager.py`, `config.py`, `narrative.py`, `main.py`, `docs/development_log.md` (this entry).
+*   **Decision:** Proceed with core CharacterManager methods added. Implement temporary location bypass for testing.
+*   **Next:** Retest dialogue initiation and basic narrative flow with location bypass active.
+
+**[Date - Placeholder] - Character Manager V1 Implementation**
+
+**Context:** Decision to implement a CharacterManager module for better organization and scalability before adding enhanced dialogue features.
+
+**Actions & Decisions:**
+
+*   Created `character_manager.py` with `CharacterManager` class.
+*   Defined `ARCHETYPE_CONFIG` with initial data for 'townsperson', 'companion', 'foe', 'love_interest'.
+*   Implemented `create_character` method for direct character addition.
+*   Implemented `generate_character` method with randomization logic based on archetype config.
+*   Defined `create_character_tool` schema in `config.py`.
+*   Refactored `main.py`:
+    *   Updated `INITIAL_GAME_STATE` structure for Varnas (archetype, relationships, etc.).
+    *   Instantiated `CharacterManager`.
+    *   Added handling for `create_character_tool` in `handle_claude_response`, calling the manager.
+    *   Passed manager instance to relevant functions.
+*   Refactored `narrative.py`:
+    *   Updated `construct_claude_prompt` to use manager for presence checks.
+    *   Added `create_character_tool` to available narrative tools.
+*   Refactored `dialogue.py`:
+    *   Updated `handle_dialogue_turn` to accept and use manager for fetching partner data.
+*   Created `docs/character_manager_summary.md` to document the new module.
+
+**Current Status:**
+
+*   CharacterManager module created with generation logic.
+*   Tool for dynamic character creation implemented and integrated.
+*   Core game loop refactored to use the manager.
+
+**Next Steps:**
+
+*   Test character generation via the `create_character_tool`.
+*   Implement remaining core CharacterManager methods (inventory, relationship modifiers).
+*   Proceed with implementing enhanced dialogue mechanics (item exchange, relationship updates).
+
 **2024-08-04 [Time - Placeholder]:** *(Timestamp for this action)*
 *   **Goal:** Refactor monolithic `game_v0.py` into logical modules and verify functionality.
 *   **Input Context:** Previous state with functional dialogue system in `game_v0.py`. User request to modularize.

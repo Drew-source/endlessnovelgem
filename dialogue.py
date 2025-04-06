@@ -4,6 +4,7 @@ import google.generativeai as genai
 from config import end_dialogue_tool # Import the specific tool needed
 from utils import call_claude_api
 from visuals import call_gemini_api # Needed for summarize_conversation
+from character_manager import CharacterManager # Import manager for type hint
 
 # --- Dialogue History Formatting --- #
 def format_dialogue_history_for_prompt(history: list) -> str:
@@ -19,6 +20,7 @@ def format_dialogue_history_for_prompt(history: list) -> str:
 def handle_dialogue_turn(
     game_state: dict,
     player_utterance: str,
+    character_manager: CharacterManager, # Added manager
     claude_client: anthropic.Anthropic | None,
     claude_model_name: str | None,
     dialogue_template: str # Pass loaded template
@@ -32,6 +34,7 @@ def handle_dialogue_turn(
     Args:
         game_state: The current game state dictionary.
         player_utterance: The raw input string from the player.
+        character_manager: The CharacterManager instance.
         claude_client: Initialized Anthropic client.
         claude_model_name: Name of the Claude model.
         dialogue_template: The loaded dialogue system prompt template.
@@ -45,13 +48,19 @@ def handle_dialogue_turn(
     prompt_details_dialogue = {} # Initialize for return in case of early exit
     response_obj = None # Initialize response object
 
-    if not partner_id or partner_id not in game_state['companions']:
-        print("[ERROR] Dialogue active but no valid partner found in handle_dialogue_turn.")
+    if not partner_id:
+        print("[ERROR] Dialogue active but no partner ID found in game_state.")
+        game_state['dialogue_active'] = False
+        return None, prompt_details_dialogue
+
+    # Use manager to get character data
+    companion_state = character_manager.get_character_data(partner_id)
+    if not companion_state:
+        print(f"[ERROR] Dialogue active but no valid partner data found for ID '{partner_id}' in handle_dialogue_turn.")
         game_state['dialogue_active'] = False # End dialogue on error
         return None, prompt_details_dialogue
 
     print(f"[DEBUG] Preparing dialogue turn with partner: {partner_id}")
-    companion_state = game_state['companions'][partner_id]
     memory = companion_state.setdefault('memory', {'dialogue_history': []})
     dialogue_history = memory.setdefault('dialogue_history', [])
 
@@ -70,7 +79,9 @@ def handle_dialogue_turn(
             try:
                  system_context = dialogue_template.format(
                      character_name=companion_state.get('name', partner_id),
-                     relation_to_player_summary=companion_state.get('relation_to_player_summary', 'Unknown'),
+                     # Use manager to get relationship info - placeholder for now
+                     # Need helper functions in manager (e.g., get_relationship_prompt_summary)
+                     relation_to_player_summary=f"Trust: {character_manager.get_trust(partner_id) or 0}", # Basic trust for now
                      location=game_state.get('location', 'Unknown'),
                      time_of_day=game_state.get('time_of_day', 'Unknown')
                  )

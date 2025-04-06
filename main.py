@@ -9,11 +9,12 @@ import google.generativeai as genai
 
 # Import configuration, utilities, and engine modules
 from config import (MAX_TURNS, PROMPT_DIR, MAX_HISTORY_MESSAGES,
-                  update_game_state_tool, start_dialogue_tool, end_dialogue_tool)
+                  update_game_state_tool, start_dialogue_tool, end_dialogue_tool, create_character_tool, DEBUG_IGNORE_LOCATION)
 from utils import load_prompt_template, call_claude_api
 from narrative import handle_narrative_turn, apply_tool_updates
 from dialogue import handle_dialogue_turn, summarize_conversation
 from visuals import call_gemini_api, construct_gemini_prompt
+from character_manager import CharacterManager
 
 # --- API Client Initialization --- #
 def initialize_clients() -> tuple[anthropic.Anthropic | None, genai.GenerativeModel | None, str | None, str | None]:
@@ -60,18 +61,28 @@ INITIAL_GAME_STATE = {
         'name': 'Player',
         'inventory': ['a worn adventurer pack', 'flint and steel'],
     },
-    'location': 'the edge of an ancient, whispering forest',
+    'location': 'whispering_forest_edge', # Use an ID-like name
     'time_of_day': 'morning',
     'current_npcs': [],
-    'companions': {
+    'companions': { # Renaming? Or keep as companions? Let's keep for now.
         'varnas_the_skeptic': {
             'name': 'Varnas the Skeptic',
-            'present': True,
+            'archetype': 'companion', # Added
+            'description': "A weathered man with distrustful eyes, clad in worn leather.", # Added
+            'traits': ['skeptic', 'guarded', 'pragmatic'], # Added
+            'location': 'whispering_forest_edge', # Explicit location
+            # 'present' is removed - determined dynamically
             'inventory': ['worn leather armor', 'short sword', 'skeptical frown'],
-            'relation_to_player_score': 0.5,
-            'relation_to_player_summary': "Watches you with guarded neutrality.",
-            'relations_to_others': {},
-            'memory': {'dialogue_history': []}
+            # Old relationship fields removed
+            'memory': {
+                'dialogue_history': []
+            },
+            'relationships': { # Added nested structure
+                'player': {
+                    'trust': 20, # Starting trust from config
+                    'temporary_statuses': {}
+                }
+            }
         }
     },
     'narrative_flags': {},
@@ -79,9 +90,9 @@ INITIAL_GAME_STATE = {
     'current_objective': None,
     'dialogue_active': False,
     'dialogue_partner': None,
-    'dialogue_target': None, # Kept for now, review later
+    # 'dialogue_target': None, # Removing this, partner is enough
     'last_player_action': None,
-    'narrative_context_summary': "Sunlight filters through the ancient trees. The air is cool and smells of damp earth and pine. Your companion, Varnas, shifts his weight beside you."
+    'narrative_context_summary': "Sunlight filters through the ancient trees of the Whispering Forest. The air is cool and smells of damp earth and pine. Your companion, Varnas, shifts his weight beside you."
 }
 
 # --- Central Response Handling --- #
@@ -89,6 +100,7 @@ def handle_claude_response(
     initial_response: anthropic.types.Message | None,
     prompt_details: dict,
     game_state: dict,
+    character_manager: CharacterManager,
     # Pass necessary clients/templates for tool processing
     claude_client: anthropic.Anthropic | None,
     claude_model_name: str | None,
@@ -105,6 +117,7 @@ def handle_claude_response(
         initial_response: The Message object from the first Claude call.
         prompt_details: Dict containing the original prompt components.
         game_state: The current game state dictionary (will be modified).
+        character_manager: The CharacterManager instance.
         claude_client: Initialized Anthropic client.
         claude_model_name: Name of the Claude model.
         gemini_client: Initialized Google AI client.
@@ -174,24 +187,34 @@ def handle_claude_response(
 
             elif tool_name == start_dialogue_tool["name"]:
                 character_id = tool_input.get('character_id')
-                companions = game_state.setdefault('companions', {})
-                if character_id and character_id in companions:
-                    if companions[character_id].get('present', False):
+                is_present = False # Default
+                if DEBUG_IGNORE_LOCATION:
+                    print("  [DEBUG] Ignoring location check for start_dialogue due to DEBUG_IGNORE_LOCATION flag.")
+                    # Assume present if character exists
+                    is_present = bool(character_manager.get_character_data(character_id))
+                else:
+                    # Check presence using manager and current location
+                    char_location = character_manager.get_location(character_id)
+                    is_present = char_location == game_state.get('location')
+
+                if character_id and character_manager.get_character_data(character_id):
+                    if is_present:
                         if not game_state['dialogue_active']:
                             game_state['dialogue_active'] = True
                             game_state['dialogue_partner'] = character_id
-                            partner_name = companions[character_id].get('name', character_id)
+                            partner_name = character_manager.get_name(character_id)
                             print(f"[INFO] Tool initiated dialogue with {partner_name} ({character_id}).")
                             processed_text += f"\n(You begin a conversation with {partner_name}.)"
                             stop_processing_flag = True
                         else:
-                            partner_name = companions.get(game_state['dialogue_partner'], {}).get('name', 'someone')
+                            current_partner_id = game_state.get('dialogue_partner')
+                            partner_name = character_manager.get_name(current_partner_id) or 'someone'
                             print(f"[WARN] Tool requested start_dialogue, but dialogue already active with {partner_name}.")
                             processed_text += f"\n(You are already talking to {partner_name}.)"
                             stop_processing_flag = True # Still stop, invalid action
                     else:
-                        partner_name = companions[character_id].get('name', character_id)
-                        print(f"[WARN] Tool requested start_dialogue with {partner_name}, but they are not present.")
+                        partner_name = character_manager.get_name(character_id) or character_id
+                        print(f"[WARN] Tool requested start_dialogue with {partner_name}, but they are not present at {game_state.get('location')}.")
                         processed_text += f"\n({partner_name} is not here to talk to.)"
                         stop_processing_flag = True # Still stop
                 else:
@@ -202,25 +225,28 @@ def handle_claude_response(
             elif tool_name == end_dialogue_tool["name"]:
                 if game_state['dialogue_active']:
                     partner_id = game_state.get('dialogue_partner')
-                    partner_name = game_state.get('companions', {}).get(partner_id, {}).get('name', 'Someone')
+                    partner_name = character_manager.get_name(partner_id) or 'Someone'
                     print(f"[INFO] Tool ended dialogue with {partner_name}.")
 
                     # Summarization logic
-                    if partner_id and partner_id in game_state.get('companions', {}):
-                        partner_memory = game_state['companions'][partner_id].get('memory', {})
-                        dialogue_history = partner_memory.get('dialogue_history', [])
-                        if dialogue_history:
-                            summary = summarize_conversation(
-                                dialogue_history=dialogue_history,
-                                gemini_client=gemini_client,
-                                gemini_model_name=gemini_model_name,
-                                summarization_template=prompt_templates.get("summarization", "Error: Summarization template missing.")
-                            )
-                            current_summary = game_state.get('narrative_context_summary', '')
-                            game_state['narrative_context_summary'] = current_summary + f"\n\n[Summary of conversation with {partner_name}: {summary}]"
-                            print(f"[DEBUG] Appended summary to narrative context.")
+                    if partner_id:
+                        partner_data = character_manager.get_character_data(partner_id)
+                        if partner_data:
+                            dialogue_history = partner_data.get('memory', {}).get('dialogue_history', [])
+                            if dialogue_history:
+                                summary = summarize_conversation(
+                                    dialogue_history=dialogue_history,
+                                    gemini_client=gemini_client,
+                                    gemini_model_name=gemini_model_name,
+                                    summarization_template=prompt_templates.get("summarization", "Error: Summarization template missing.")
+                                )
+                                current_summary = game_state.get('narrative_context_summary', '')
+                                game_state['narrative_context_summary'] = current_summary + f"\n\n[Summary of conversation with {partner_name}: {summary}]"
+                                print(f"[DEBUG] Appended summary to narrative context.")
+                            else:
+                                print(f"[DEBUG] No dialogue history found for {partner_name} to summarize.")
                         else:
-                             print(f"[DEBUG] No dialogue history found for {partner_name} to summarize.")
+                             print(f"[WARN] Could not retrieve data for partner {partner_id} during summarization.")
 
                     game_state['dialogue_active'] = False
                     game_state['dialogue_partner'] = None
@@ -230,6 +256,36 @@ def handle_claude_response(
                     print("[WARN] Tool requested end_dialogue, but dialogue was not active.")
                     processed_text += "\n(There was no conversation to end.)"
                     stop_processing_flag = True # Still stop
+
+            elif tool_name == create_character_tool["name"]: # Added
+                print(f"[INFO] Handling create_character tool: {tool_input}")
+                archetype = tool_input.get('archetype')
+                location = tool_input.get('location') or game_state.get('location') # Default to current location
+                name_hint = tool_input.get('name_hint')
+
+                if not archetype:
+                     print(f"[ERROR] Tool create_character called without required 'archetype'.")
+                     processed_text += "\n[SYSTEM ERROR: Character creation failed - missing archetype.]"
+                elif not location:
+                    print(f"[ERROR] Tool create_character called but could not determine location (not provided and player location unavailable). Input: {tool_input}")
+                    processed_text += "\n[SYSTEM ERROR: Character creation failed - unknown location.]"
+                else:
+                    new_char_id = character_manager.generate_character(
+                        archetype=archetype,
+                        location=location,
+                        name_hint=name_hint
+                    )
+                    if new_char_id:
+                        new_char_name = character_manager.get_name(new_char_id)
+                        print(f"[INFO] Successfully generated character: {new_char_name} ({new_char_id}) at {location}")
+                        processed_text += f"\n(A new character arrives: {new_char_name})" # Simple feedback
+                        # TODO: Provide this info back to Claude via tool_result?
+                        # For now, just give player feedback and stop processing.
+                    else:
+                        print(f"[ERROR] Character generation failed for archetype '{archetype}'.")
+                        processed_text += "\n[SYSTEM ERROR: Character creation failed.]"
+                
+                stop_processing_flag = True # Stop further processing this turn
 
             else: # Unknown tool
                 print(f"[WARNING] Claude requested unknown tool: {tool_name}")
@@ -347,6 +403,10 @@ def main():
     turn_count = 0
     conversation_history = []
 
+    # --- Instantiate Character Manager --- #
+    if 'companions' not in game_state: game_state['companions'] = {} # Ensure key exists
+    character_manager = CharacterManager(game_state['companions'])
+
     print("Welcome to Endless Novel (v0 - Text Only)")
 
     # Initial Scene Description
@@ -388,6 +448,7 @@ def main():
             dialogue_response_obj, dialogue_prompt_details = handle_dialogue_turn(
                 game_state=game_state,
                 player_utterance=player_input_raw,
+                character_manager=character_manager,
                 claude_client=claude_client,
                 claude_model_name=claude_model_name,
                 dialogue_template=prompt_templates.get("dialogue_system", "") # Pass template
@@ -398,6 +459,7 @@ def main():
                 initial_response=dialogue_response_obj,
                 prompt_details=dialogue_prompt_details,
                 game_state=game_state,
+                character_manager=character_manager,
                 claude_client=claude_client, # Pass clients/templates again for potential inner calls
                 claude_model_name=claude_model_name,
                 gemini_client=gemini_client,
@@ -445,6 +507,7 @@ def main():
             initial_claude_response_obj, narrative_prompt_details = handle_narrative_turn(
                 game_state=game_state,
                 conversation_history=conversation_history,
+                character_manager=character_manager,
                 claude_client=claude_client,
                 claude_model_name=claude_model_name,
                 prompt_templates=prompt_templates
@@ -455,6 +518,7 @@ def main():
                 initial_response=initial_claude_response_obj,
                 prompt_details=narrative_prompt_details,
                 game_state=game_state,
+                character_manager=character_manager,
                 claude_client=claude_client,
                 claude_model_name=claude_model_name,
                 gemini_client=gemini_client,
@@ -515,12 +579,20 @@ def main():
             # 6. Generate Placeholders (if not stopped by dialogue transition)
             if not stop_processing_flag:
                 print("\n>>> Asking Gemini for scene details... <<<")
-                gemini_prompt = construct_gemini_prompt(
-                    narrative_text=processed_text,
-                    game_state=game_state,
-                    placeholder_template=prompt_templates.get("gemini_placeholder_template", "")
-                 )
-                placeholder_output = call_gemini_api(gemini_client, gemini_model_name, gemini_prompt)
+                try:
+                    gemini_prompt = construct_gemini_prompt(
+                        narrative_text=processed_text,
+                        game_state=game_state,
+                        placeholder_template=prompt_templates.get("gemini_placeholder_template", "")
+                    )
+                    placeholder_output = call_gemini_api(gemini_client, gemini_model_name, gemini_prompt)
+                except TypeError as e:
+                    print(f"[ERROR] TypeError during Gemini prompt construction or call: {e}")
+                    print("[WARN] Skipping placeholder generation for this turn.")
+                    placeholder_output = "[ Placeholder generation error ]"
+                except Exception as e:
+                    print(f"[ERROR] Unexpected error during Gemini call: {e}")
+                    placeholder_output = "[ Placeholder generation failed ]"
             else:
                  print("[DEBUG MAIN] stop_processing flag is True, skipping Gemini call.")
                  placeholder_output = "[Placeholders suppressed due to dialogue transition]"
