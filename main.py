@@ -20,7 +20,7 @@ def initialize_clients() -> tuple[anthropic.Anthropic | None, genai.GenerativeMo
     """Initializes and returns API clients and model names."""
     load_dotenv()
 
-    # Claude Client
+    # Claude Client 
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
     anthropic_model_name = os.getenv("ANTHROPIC_MODEL_NAME")
     claude_client = None
