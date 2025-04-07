@@ -169,14 +169,30 @@ class SettingsPage:
     def handle_start_game(self, e):
         """Save settings and start/continue the game"""
         self.is_loading = True
-        self.page.update()
-        
+        # Update UI immediately to show loading/disable button
+        # We need to update the button specifically or rebuild part of the UI
+        # For simplicity, just updating the page might work, though it's less efficient.
+        self.page.update() # Attempt to update UI to reflect loading state
+
         # Save settings to file
         self.save_settings()
-        
+
         # Call the provided callback if available
         if self.on_save_callback:
-            self.on_save_callback(asdict(self.settings), self.is_new_game)
+            try:
+                self.on_save_callback(asdict(self.settings), self.is_new_game)
+            finally:
+                # Reset loading state *after* callback finishes or errors
+                self.is_loading = False
+                # We might need another page update here if the user somehow
+                # stays on the settings page after an error in the callback
+                # but usually the callback navigates away.
+        else:
+            # If no callback, just reset loading state
+            self.is_loading = False
+
+        # It's generally better if the callback handles the final UI state,
+        # but we ensure is_loading is reset here.
     
     def handle_back(self, e):
         """Go back to main game page"""
