@@ -1,4 +1,4 @@
-"""Settings page for Endless Novel using Flet UI framework"""
+"""Settings page for Endless Novel using Flet UI framework with enhanced visual integration"""
 
 import flet as ft
 import json
@@ -15,10 +15,19 @@ class UniverseSettings:
 
 @dataclass
 class CharacterSettings:
+    # Basic character settings
     gender: str = "Male"
     type: str = "Anime"
     consistentAppearance: bool = True
     dynamicClothing: bool = True
+    
+    # Visual generation settings (new)
+    visualStyle: str = "detailed"  # Options: "minimal", "detailed", "atmospheric"
+    visualPromptWeight: float = 0.8  # How strongly character appears in scene (0.1-1.0)
+    expressionRange: str = "balanced"  # Options: "subtle", "balanced", "exaggerated"
+    visualPriority: bool = True  # Prioritize character in visual descriptions
+    voiceDescription: str = "default"  # Options: "none", "default", "detailed"
+    characterPalette: str = "automatic"  # Or specific color theme
 
 @dataclass
 class BackgroundSettings:
@@ -59,6 +68,12 @@ UNIVERSE_PRESETS = [
         "type": "historical",
         "description": "The untamed frontier where law is scarce, gunslingers and outlaws make their own rules, and the promise of gold draws brave souls to lawless towns.",
     },
+]
+
+# Character Palettes (new)
+CHARACTER_PALETTES = [
+    "automatic", "warm", "cool", "vibrant", "muted", 
+    "earthy", "pastel", "monochrome", "contrasting"
 ]
 
 # --- Settings Page Class --- #
@@ -113,6 +128,435 @@ class SettingsPage:
             print("[INFO] Saved settings to file")
         except Exception as e:
             print(f"[ERROR] Failed to save settings: {e}")
+    
+    # ... [Other methods from original code] ...
+    
+    def build_character_tab(self):
+        """Build the character settings tab with enhanced visual options"""
+        # Character gender selection
+        self.male_button = ft.ElevatedButton(
+            "Male",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#2196f3" if self.settings.character.gender == "Male" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=150,
+            on_click=lambda e: self.set_character_gender("Male"),
+        )
+        
+        self.female_button = ft.ElevatedButton(
+            "Female",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#f50057" if self.settings.character.gender == "Female" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=150,
+            on_click=lambda e: self.set_character_gender("Female"),
+        )
+        
+        gender_row = ft.Row(
+            [self.male_button, self.female_button],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=20,
+        )
+        
+        # Character style selection
+        self.realistic_button = ft.ElevatedButton(
+            "Realistic",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#ff9800" if self.settings.character.type == "Realistic" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=150,
+            on_click=lambda e: self.set_character_type("Realistic"),
+        )
+        
+        self.anime_button = ft.ElevatedButton(
+            "Anime",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#673ab7" if self.settings.character.type == "Anime" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=150,
+            on_click=lambda e: self.set_character_type("Anime"),
+        )
+        
+        style_row = ft.Row(
+            [self.realistic_button, self.anime_button],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=20,
+        )
+        
+        # Basic character options
+        self.consistent_appearance_switch = ft.Switch(
+            value=self.settings.character.consistentAppearance,
+            active_color="#f06292",
+            on_change=lambda e: self.set_character_option("consistentAppearance", e.control.value),
+        )
+        
+        self.dynamic_clothing_switch = ft.Switch(
+            value=self.settings.character.dynamicClothing,
+            active_color="#f06292",
+            on_change=lambda e: self.set_character_option("dynamicClothing", e.control.value),
+        )
+        
+        basic_options_col = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text("Consistent Character Appearance", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="When enabled, your character will maintain the same appearance throughout the story, with minimal variations.",
+                    ),
+                    ft.Container(expand=True),
+                    self.consistent_appearance_switch,
+                ]),
+                ft.Divider(height=1, color=ft.Colors.WHITE10),
+                ft.Row([
+                    ft.Text("Dynamic Clothing Based on Story", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="Character's outfit will change based on the story context, environment, and activities.",
+                    ),
+                    ft.Container(expand=True),
+                    self.dynamic_clothing_switch,
+                ]),
+            ]),
+            padding=20,
+            bgcolor="#1e1e2f",
+            border_radius=10,
+            border=ft.border.all(1, ft.Colors.WHITE10),
+        )
+        
+        # NEW: Visual Generation Options Section
+        
+        # Visual Style Dropdown
+        self.visual_style_dropdown = ft.Dropdown(
+            options=[
+                ft.dropdown.Option("minimal", "Minimal - Simple, clean descriptions"),
+                ft.dropdown.Option("detailed", "Detailed - Rich, comprehensive visuals"),
+                ft.dropdown.Option("atmospheric", "Atmospheric - Mood-focused, artistic"),
+            ],
+            width=400,
+            value=self.settings.character.visualStyle,
+            on_change=lambda e: self.set_character_option("visualStyle", e.control.value),
+            filled=True,
+            bgcolor="#1e1e2f",
+            border_color=ft.Colors.WHITE24,
+            color=ft.Colors.WHITE,
+        )
+        
+        # Visual Prompt Weight Slider
+        self.visual_weight_slider = ft.Slider(
+            min=0.1,
+            max=1.0,
+            divisions=9,
+            value=self.settings.character.visualPromptWeight,
+            label="{value}",
+            on_change=lambda e: self.set_character_option("visualPromptWeight", e.control.value),
+            active_color="#e57373",
+        )
+        
+        # Expression Range Buttons
+        self.subtle_button = ft.ElevatedButton(
+            "Subtle",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#4caf50" if self.settings.character.expressionRange == "subtle" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=120,
+            on_click=lambda e: self.set_character_option("expressionRange", "subtle"),
+        )
+        
+        self.balanced_button = ft.ElevatedButton(
+            "Balanced",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#4caf50" if self.settings.character.expressionRange == "balanced" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=120,
+            on_click=lambda e: self.set_character_option("expressionRange", "balanced"),
+        )
+        
+        self.exaggerated_button = ft.ElevatedButton(
+            "Exaggerated",
+            style=ft.ButtonStyle(
+                bgcolor={"": "#4caf50" if self.settings.character.expressionRange == "exaggerated" else "#1e1e2f"},
+                padding=15,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            width=120,
+            on_click=lambda e: self.set_character_option("expressionRange", "exaggerated"),
+        )
+        
+        expression_row = ft.Row(
+            [self.subtle_button, self.balanced_button, self.exaggerated_button],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10,
+        )
+        
+        # Visual Priority Switch
+        self.visual_priority_switch = ft.Switch(
+            value=self.settings.character.visualPriority,
+            active_color="#81c784",
+            on_change=lambda e: self.set_character_option("visualPriority", e.control.value),
+        )
+        
+        # Voice Description Dropdown
+        self.voice_description_dropdown = ft.Dropdown(
+            options=[
+                ft.dropdown.Option("none", "None - No voice descriptions"),
+                ft.dropdown.Option("default", "Default - Basic voice mentions"),
+                ft.dropdown.Option("detailed", "Detailed - Rich voice characterization"),
+            ],
+            width=400,
+            value=self.settings.character.voiceDescription,
+            on_change=lambda e: self.set_character_option("voiceDescription", e.control.value),
+            filled=True,
+            bgcolor="#1e1e2f",
+            border_color=ft.Colors.WHITE24,
+            color=ft.Colors.WHITE,
+        )
+        
+        # Character Palette Dropdown
+        palette_options = [ft.dropdown.Option(p, p.capitalize()) for p in CHARACTER_PALETTES]
+        self.character_palette_dropdown = ft.Dropdown(
+            options=palette_options,
+            width=400,
+            value=self.settings.character.characterPalette,
+            on_change=lambda e: self.set_character_option("characterPalette", e.control.value),
+            filled=True,
+            bgcolor="#1e1e2f",
+            border_color=ft.Colors.WHITE24,
+            color=ft.Colors.WHITE,
+        )
+        
+        visual_options_col = ft.Container(
+            content=ft.Column([
+                ft.Container(
+                    content=ft.Text(
+                        "Visual Generation Settings",
+                        size=18,
+                        weight=ft.FontWeight.BOLD,
+                        color="#e57373",
+                    ),
+                    margin=ft.margin.only(bottom=10),
+                ),
+                
+                # Visual Style
+                ft.Row([
+                    ft.Text("Visual Style", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="Controls the level of detail in character descriptions.",
+                    ),
+                ]),
+                self.visual_style_dropdown,
+                ft.Container(height=10),
+                
+                # Visual Weight
+                ft.Row([
+                    ft.Text("Character Prominence", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="How prominently your character appears in scene descriptions (0.1=minimal, 1.0=dominant).",
+                    ),
+                ]),
+                self.visual_weight_slider,
+                ft.Container(height=10),
+                
+                # Expression Range
+                ft.Row([
+                    ft.Text("Expression Range", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="How emotionally expressive your character appears.",
+                    ),
+                ]),
+                expression_row,
+                ft.Container(height=10),
+                
+                # Visual Priority
+                ft.Row([
+                    ft.Text("Prioritize in Scene Descriptions", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="When enabled, ensures your character is featured prominently in scene descriptions.",
+                    ),
+                    ft.Container(expand=True),
+                    self.visual_priority_switch,
+                ]),
+                ft.Divider(height=1, color=ft.Colors.WHITE10),
+                
+                # Voice Description
+                ft.Row([
+                    ft.Text("Voice Description", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="How your character's voice is described in the narrative.",
+                    ),
+                ]),
+                self.voice_description_dropdown,
+                ft.Container(height=10),
+                
+                # Character Palette
+                ft.Row([
+                    ft.Text("Character Color Palette", weight=ft.FontWeight.W_500),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text("?", size=12),
+                        width=20,
+                        height=20,
+                        bgcolor=ft.Colors.WHITE24,
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                        tooltip="The color theme used for your character throughout the story.",
+                    ),
+                ]),
+                self.character_palette_dropdown,
+            ]),
+            padding=20,
+            bgcolor="#1e1e2f",
+            border_radius=10,
+            border=ft.border.all(1, ft.Colors.WHITE10),
+        )
+        
+        # Assemble character tab
+        self.character_container = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Container(
+                        content=ft.Row(
+                            [
+                                ft.Icon(ft.Icons.PERSON, color="#f48fb1", size=24),
+                                ft.Text(
+                                    "Character Settings", 
+                                    size=24, 
+                                    weight=ft.FontWeight.BOLD,
+                                    color="#f48fb1"
+                                ),
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER,
+                        ),
+                        margin=ft.margin.only(bottom=20),
+                    ),
+                    ft.Text("Character Gender", weight=ft.FontWeight.W_500),
+                    gender_row,
+                    ft.Container(height=20),
+                    ft.Text("Character Style", weight=ft.FontWeight.W_500),
+                    style_row,
+                    ft.Container(height=20),
+                    basic_options_col,
+                    ft.Container(height=20),
+                    visual_options_col,
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=10,
+                scroll=ft.ScrollMode.AUTO,  # Enable scrolling for the content
+            ),
+            padding=20,
+            bgcolor="#131320",
+            border_radius=15,
+            border=ft.border.all(1, ft.Colors.WHITE10),
+            width=600,
+            height=600,  # Fixed height with scrolling enabled
+            margin=ft.margin.only(bottom=20),
+            visible=self.active_tab == "character",
+        )
+    
+    def update_character_ui(self):
+        """Update character tab UI based on settings"""
+        # Update gender buttons
+        self.male_button.bgcolor = "#2196f3" if self.settings.character.gender == "Male" else "#1e1e2f"
+        self.female_button.bgcolor = "#f50057" if self.settings.character.gender == "Female" else "#1e1e2f"
+        
+        # Update type buttons
+        self.realistic_button.bgcolor = "#ff9800" if self.settings.character.type == "Realistic" else "#1e1e2f"
+        self.anime_button.bgcolor = "#673ab7" if self.settings.character.type == "Anime" else "#1e1e2f"
+        
+        # Update basic toggle switches
+        self.consistent_appearance_switch.value = self.settings.character.consistentAppearance
+        self.dynamic_clothing_switch.value = self.settings.character.dynamicClothing
+        
+        # Update visual generation UI elements (new)
+        self.visual_style_dropdown.value = self.settings.character.visualStyle
+        self.visual_weight_slider.value = self.settings.character.visualPromptWeight
+        
+        # Update expression range buttons
+        self.subtle_button.bgcolor = "#4caf50" if self.settings.character.expressionRange == "subtle" else "#1e1e2f"
+        self.balanced_button.bgcolor = "#4caf50" if self.settings.character.expressionRange == "balanced" else "#1e1e2f"
+        self.exaggerated_button.bgcolor = "#4caf50" if self.settings.character.expressionRange == "exaggerated" else "#1e1e2f"
+        
+        # Update other visual options
+        self.visual_priority_switch.value = self.settings.character.visualPriority
+        self.voice_description_dropdown.value = self.settings.character.voiceDescription
+        self.character_palette_dropdown.value = self.settings.character.characterPalette
+    
+    def set_character_gender(self, gender: str):
+        """Set character gender"""
+        self.settings.character.gender = gender
+        self.update_character_ui()
+        self.page.update()
+    
+    def set_character_type(self, type_: str):
+        """Set character type"""
+        self.settings.character.type = type_
+        self.update_character_ui()
+        self.page.update()
+    
+    def set_character_option(self, option: str, value: bool | str | float):
+        """Set character option"""
+        setattr(self.settings.character, option, value)
+        self.update_character_ui()
+        self.page.update()
     
     def handle_preset_select(self, e, preset_name: str):
         """Handle universe preset selection"""
@@ -239,31 +683,6 @@ class SettingsPage:
             self.custom_preset_button.scale = 1.05
         else:
             self.custom_preset_button.visible = False
-    
-    def update_character_ui(self):
-        """Update character tab UI based on settings"""
-        # Update gender buttons
-        self.male_button.bgcolor = "#2196f3" if self.settings.character.gender == "Male" else "#1e1e2f"
-        self.female_button.bgcolor = "#f50057" if self.settings.character.gender == "Female" else "#1e1e2f"
-        
-        # Update type buttons
-        self.realistic_button.bgcolor = "#ff9800" if self.settings.character.type == "Realistic" else "#1e1e2f"
-        self.anime_button.bgcolor = "#673ab7" if self.settings.character.type == "Anime" else "#1e1e2f"
-        
-        # Update toggle switches
-        self.consistent_appearance_switch.value = self.settings.character.consistentAppearance
-        self.dynamic_clothing_switch.value = self.settings.character.dynamicClothing
-    
-    def update_background_ui(self):
-        """Update background tab UI based on settings"""
-        # Update mood buttons
-        for mood_btn in self.mood_buttons:
-            mood = mood_btn.data
-            mood_btn.bgcolor = "#03a9f4" if self.settings.background.mood == mood else "#1e1e2f"
-        
-        # Update toggle switches
-        self.dynamic_time_switch.value = self.settings.background.dynamicTimeOfDay
-        self.weather_effects_switch.value = self.settings.background.weatherEffects
     
     def build(self):
         """Build the entire settings page UI"""
@@ -511,178 +930,6 @@ class SettingsPage:
             visible=self.active_tab == "universe",
         )
     
-    def build_character_tab(self):
-        """Build the character settings tab"""
-        # Character gender selection
-        self.male_button = ft.ElevatedButton(
-            "Male",
-            style=ft.ButtonStyle(
-                bgcolor={"": "#2196f3" if self.settings.character.gender == "Male" else "#1e1e2f"},
-                padding=15,
-                shape=ft.RoundedRectangleBorder(radius=8),
-            ),
-            width=150,
-            on_click=lambda e: self.set_character_gender("Male"),
-        )
-        
-        self.female_button = ft.ElevatedButton(
-            "Female",
-            style=ft.ButtonStyle(
-                bgcolor={"": "#f50057" if self.settings.character.gender == "Female" else "#1e1e2f"},
-                padding=15,
-                shape=ft.RoundedRectangleBorder(radius=8),
-            ),
-            width=150,
-            on_click=lambda e: self.set_character_gender("Female"),
-        )
-        
-        gender_row = ft.Row(
-            [self.male_button, self.female_button],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=20,
-        )
-        
-        # Character style selection
-        self.realistic_button = ft.ElevatedButton(
-            "Realistic",
-            style=ft.ButtonStyle(
-                bgcolor={"": "#ff9800" if self.settings.character.type == "Realistic" else "#1e1e2f"},
-                padding=15,
-                shape=ft.RoundedRectangleBorder(radius=8),
-            ),
-            width=150,
-            on_click=lambda e: self.set_character_type("Realistic"),
-        )
-        
-        self.anime_button = ft.ElevatedButton(
-            "Anime",
-            style=ft.ButtonStyle(
-                bgcolor={"": "#673ab7" if self.settings.character.type == "Anime" else "#1e1e2f"},
-                padding=15,
-                shape=ft.RoundedRectangleBorder(radius=8),
-            ),
-            width=150,
-            on_click=lambda e: self.set_character_type("Anime"),
-        )
-        
-        style_row = ft.Row(
-            [self.realistic_button, self.anime_button],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=20,
-        )
-        
-        # Character options
-        self.consistent_appearance_switch = ft.Switch(
-            value=self.settings.character.consistentAppearance,
-            active_color="#f06292",
-            on_change=lambda e: self.set_character_option("consistentAppearance", e.control.value),
-        )
-        
-        self.dynamic_clothing_switch = ft.Switch(
-            value=self.settings.character.dynamicClothing,
-            active_color="#f06292",
-            on_change=lambda e: self.set_character_option("dynamicClothing", e.control.value),
-        )
-        
-        options_col = ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text("Consistent Character Appearance", weight=ft.FontWeight.W_500),
-                    ft.Container(width=5),
-                    ft.Container(
-                        content=ft.Text("?", size=12),
-                        width=20,
-                        height=20,
-                        bgcolor=ft.Colors.WHITE24,
-                        border_radius=10,
-                        alignment=ft.alignment.center,
-                        tooltip="When enabled, your character will maintain the same appearance throughout the story, with minimal variations.",
-                    ),
-                    # Use Container with expand instead of Spacer
-                    ft.Container(expand=True),
-                    self.consistent_appearance_switch,
-                ]),
-                ft.Divider(height=1, color=ft.Colors.WHITE10),
-                ft.Row([
-                    ft.Text("Dynamic Clothing Based on Story", weight=ft.FontWeight.W_500),
-                    ft.Container(width=5),
-                    ft.Container(
-                        content=ft.Text("?", size=12),
-                        width=20,
-                        height=20,
-                        bgcolor=ft.Colors.WHITE24,
-                        border_radius=10,
-                        alignment=ft.alignment.center,
-                        tooltip="Character's outfit will change based on the story context, environment, and activities.",
-                    ),
-                    # Use Container with expand instead of Spacer
-                    ft.Container(expand=True),
-                    self.dynamic_clothing_switch,
-                ]),
-            ]),
-            padding=20,
-            bgcolor="#1e1e2f",
-            border_radius=10,
-            border=ft.border.all(1, ft.Colors.WHITE10),
-        )
-        
-        # Assemble character tab
-        self.character_container = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Container(
-                        content=ft.Row(
-                            [
-                                ft.Icon(ft.Icons.PERSON, color="#f48fb1", size=24),
-                                ft.Text(
-                                    "Character Settings", 
-                                    size=24, 
-                                    weight=ft.FontWeight.BOLD,
-                                    color="#f48fb1"
-                                ),
-                            ],
-                            alignment=ft.MainAxisAlignment.CENTER,
-                        ),
-                        margin=ft.margin.only(bottom=20),
-                    ),
-                    ft.Text("Character Gender", weight=ft.FontWeight.W_500),
-                    gender_row,
-                    ft.Container(height=20),
-                    ft.Text("Character Style", weight=ft.FontWeight.W_500),
-                    style_row,
-                    ft.Container(height=20),
-                    options_col,
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=10,
-            ),
-            padding=20,
-            bgcolor="#131320",
-            border_radius=15,
-            border=ft.border.all(1, ft.Colors.WHITE10),
-            width=600,
-            margin=ft.margin.only(bottom=20),
-            visible=self.active_tab == "character",
-        )
-    
-    def set_character_gender(self, gender: str):
-        """Set character gender"""
-        self.settings.character.gender = gender
-        self.update_character_ui()
-        self.page.update()
-    
-    def set_character_type(self, type_: str):
-        """Set character type"""
-        self.settings.character.type = type_
-        self.update_character_ui()
-        self.page.update()
-    
-    def set_character_option(self, option: str, value: bool):
-        """Set character option"""
-        setattr(self.settings.character, option, value)
-        self.update_character_ui()
-        self.page.update()
-    
     def build_background_tab(self):
         """Build the background settings tab"""
         # Background mood selection
@@ -812,7 +1059,6 @@ class SettingsPage:
         setattr(self.settings.background, option, value)
         self.update_background_ui()
         self.page.update()
-
 
 # --- Integration with main flet_app.py --- #
 def create_settings_page(page: ft.Page, on_save_callback=None, on_back_callback=None):
