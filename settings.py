@@ -759,6 +759,9 @@ class SettingsPage:
         self.build_character_tab()
         self.build_background_tab()
         
+        # Re-check if it's a new game based on file existence *before* creating button
+        self.is_new_game = not os.path.exists("game_settings.json")
+
         # Action buttons
         start_game_button = ft.ElevatedButton(
             content=ft.Row(
