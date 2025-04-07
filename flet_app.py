@@ -152,6 +152,24 @@ class GameApp:
                 value="",
                 selectable=True,
                 extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                expand=True,
+            )
+            
+            # Wrap the Markdown widget in a scrollable ListView
+            self.scrollable_narrative_view = ft.ListView(
+                [self.narrative_display],
+                expand=True,
+                auto_scroll=True,
+                spacing=10,
+            )
+            
+            # Container for styling (border, padding) around the scrollable view
+            self.narrative_container = ft.Container(
+                content=self.scrollable_narrative_view,
+                border=ft.border.all(1, ft.Colors.OUTLINE),
+                border_radius=ft.border_radius.all(10),
+                padding=20,
+                expand=True,
             )
             
             self.visuals_display = ft.Text(
@@ -195,13 +213,7 @@ class GameApp:
             # Game screen container
             self.game_screen = ft.Column(
                 controls=[
-                    ft.Container(
-                        content=self.narrative_display,
-                        border=ft.border.all(1, ft.Colors.OUTLINE),
-                        border_radius=ft.border_radius.all(10),
-                        padding=20,
-                        expand=True,
-                    ),
+                    self.narrative_container,
                     ft.Container(
                         content=self.visuals_display,
                         padding=ft.padding.only(top=10, bottom=10),
