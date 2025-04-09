@@ -220,8 +220,8 @@ def apply_tool_updates(tool_input: dict, game_state: dict) -> tuple[bool, list]:
 
 # --- Prompt Construction --- #
 def construct_claude_prompt(current_state: dict,
-                              conversation_history: list,
-                              prompt_templates: dict) -> dict:
+                          conversation_history: list,
+                          prompt_templates: dict) -> dict:
     """Constructs the Claude prompt components for a narrative turn.
 
     Args:
@@ -245,6 +245,10 @@ def construct_claude_prompt(current_state: dict,
     companion_names_present = ', '.join([comp['name'] for comp_id, comp in present_companions.items()]) or "None"
     companion_ids_present = ', '.join(present_companions.keys()) or "None"
     
+    # Extract universe settings
+    universe_settings = current_state.get('settings', {}).get('universe', {})
+    background_settings = current_state.get('settings', {}).get('background', {})
+    
     context = {
         'player_location': current_state.get('location', 'an unknown place'),
         'characters_present': ', '.join(current_state.get('current_npcs', []) or ["None"]),
@@ -254,7 +258,13 @@ def construct_claude_prompt(current_state: dict,
         'key_information': '; '.join([f"{k}: {v}" for k, v in current_state.get('narrative_flags', {}).items()] or ["None"]),
         'recent_events_summary': current_state.get('narrative_context_summary', 'The story has just begun.'),
         'current_objective': current_state.get('current_objective', 'None stated.'),
-        'last_player_action': current_state.get('last_player_action', 'None')
+        'last_player_action': current_state.get('last_player_action', 'None'),
+        # Add universe and background settings
+        'universe_type': universe_settings.get('type', 'fantasy'),
+        'universe_description': universe_settings.get('description', 'A medieval fantasy realm'),
+        'universe_preset': universe_settings.get('preset', 'Medieval Fantasy'),
+        'background_mood': background_settings.get('mood', 'epic'),
+        'weather_effects': background_settings.get('weatherEffects', False)
     }
 
     try:
@@ -266,11 +276,25 @@ def construct_claude_prompt(current_state: dict,
         print(f"[ERROR] Failed to format Claude turn template: {e}")
         user_turn_prompt = "Describe the situation based on context. (Formatting error)"
 
+    # Dynamically modify system prompt with universe details
+    system_prompt_with_universe = system_prompt
+    try:
+        # If the system prompt contains placeholders for universe settings
+        if "{universe_type}" in system_prompt or "{universe_description}" in system_prompt:
+            system_prompt_with_universe = system_prompt.format(**context)
+        else:
+            # Otherwise append universe context to system prompt
+            universe_context = f"\nUNIVERSE TYPE: {context['universe_type']}\nUNIVERSE DESCRIPTION: {context['universe_description']}\nMOOD: {context['background_mood']}"
+            system_prompt_with_universe = system_prompt + universe_context
+    except Exception as e:
+        print(f"[ERROR] Failed to add universe context to system prompt: {e}")
+
     return {
-        "system_prompt": system_prompt,
+        "system_prompt": system_prompt_with_universe,
         "user_prompt": user_turn_prompt,
         "history": conversation_history
     }
+
 
 # --- Narrative Turn Handling --- #
 def handle_narrative_turn(

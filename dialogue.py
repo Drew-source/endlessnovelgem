@@ -6,6 +6,84 @@ from utils import call_claude_api
 from visuals import call_gemini_api # Needed for summarize_conversation
 
 # --- Dialogue History Formatting --- #
+
+# Add this function after the imports in dialogue.py
+def construct_dialogue_prompt(game_state: dict,
+                            player_utterance: str,
+                            dialogue_template: str) -> dict:
+    """Constructs the dialogue prompt for Claude.
+    
+    Args:
+        game_state: The current game state dictionary.
+        player_utterance: The player's dialogue utterance.
+        dialogue_template: The dialogue system prompt template.
+        
+    Returns:
+        A dictionary with prompt components.
+    """
+    # Extract basic dialogue information
+    partner_id = game_state.get('dialogue_partner', '')
+    if not partner_id or partner_id not in game_state.get('companions', {}):
+        print(f"[ERROR] Invalid dialogue partner ID: {partner_id}")
+        return {"system": "", "messages": []}
+    
+    # Get partner information
+    partner = game_state['companions'][partner_id]
+    partner_name = partner.get('name', partner_id)
+    
+    # Get dialogue history if available
+    dialogue_history = partner.get('memory', {}).get('dialogue_history', [])
+    previous_exchanges = []
+    
+    # Format dialogue history
+    for entry in dialogue_history[-5:]:  # Last 5 exchanges
+        if entry.get('speaker') == 'player':
+            previous_exchanges.append(f"Player: {entry.get('utterance', '')}")
+        else:
+            previous_exchanges.append(f"{partner_name}: {entry.get('utterance', '')}")
+    
+    previous_exchanges_text = "\n".join(previous_exchanges) if previous_exchanges else "No previous dialogue."
+    
+    # Extract universe settings
+    universe_settings = game_state.get('settings', {}).get('universe', {})
+    background_settings = game_state.get('settings', {}).get('background', {})
+    
+    # Prepare context for dialogue
+    context = {
+        'player_name': game_state.get('player', {}).get('name', 'Player'),
+        'partner_name': partner_name,
+        'partner_id': partner_id,
+        'location': game_state.get('location', 'an unknown place'),
+        'time_of_day': game_state.get('time_of_day', 'daytime'),
+        'previous_dialogue': previous_exchanges_text,
+        'player_utterance': player_utterance,
+        'relationship_score': partner.get('relation_to_player_score', 0.5),
+        'relationship_summary': partner.get('relation_to_player_summary', 'Neutral'),
+        # Add universe context
+        'universe_type': universe_settings.get('type', 'fantasy'),
+        'universe_description': universe_settings.get('description', 'A medieval fantasy realm'),
+        'universe_preset': universe_settings.get('preset', 'Medieval Fantasy'),
+        'background_mood': background_settings.get('mood', 'epic')
+    }
+    
+    try:
+        # Format system prompt with context
+        system_prompt = dialogue_template.format(**context)
+    except KeyError as e:
+        print(f"[ERROR] Missing key in dialogue template: {e}")
+        system_prompt = f"Error: Dialogue prompt construction failed. Missing key: {e}"
+    except Exception as e:
+        print(f"[ERROR] Failed to format dialogue template: {e}")
+        system_prompt = "Error: Dialogue prompt construction failed."
+    
+    # Construct the messages
+    messages = [{"role": "user", "content": player_utterance}]
+    
+    return {
+        "system": system_prompt,
+        "messages": messages
+    }
+
 def format_dialogue_history_for_prompt(history: list) -> str:
     """Formats the dialogue history list into a string suitable for the prompt."""
     formatted_lines = []
@@ -59,40 +137,33 @@ def handle_dialogue_turn(
     dialogue_history.append({"speaker": "player", "utterance": player_utterance})
 
     # 2. Prepare prompt details for LLM
+  # 2. Prepare prompt details for LLM
     try:
-        # --- System Prompt Construction --- #
-        # Use the passed template and format it
-        if "Error:" in dialogue_template:
-             print(f"[WARN] Using fallback dialogue system prompt due to template load error: {dialogue_template}")
-             # Fallback prompt - similar to the old hardcoded one but less aggressive on ending
-             system_context = f"You are {companion_state.get('name', partner_id)}. Respond naturally in character based on history. ONLY provide dialogue. Use end_dialogue tool ONLY for clear farewells."
-        else:
-            try:
-                 system_context = dialogue_template.format(
-                     character_name=companion_state.get('name', partner_id),
-                     relation_to_player_summary=companion_state.get('relation_to_player_summary', 'Unknown'),
-                     location=game_state.get('location', 'Unknown'),
-                     time_of_day=game_state.get('time_of_day', 'Unknown')
-                 )
-            except KeyError as e:
-                 print(f"[ERROR] Missing key in dialogue system template: {e}. Using fallback prompt.")
-                 system_context = f"You are {companion_state.get('name', partner_id)}. Respond naturally. (Template key error: {e})"
-            except Exception as e:
-                 print(f"[ERROR] Failed to format dialogue system template: {e}. Using fallback prompt.")
-                 system_context = f"You are {companion_state.get('name', partner_id)}. Respond naturally. (Template format error)"
+        # Use the new construct_dialogue_prompt function
+        prompt_details_dialogue = construct_dialogue_prompt(
+            game_state=game_state,
+            player_utterance=player_utterance,
+            dialogue_template=dialogue_template
+        )
         
-        # --- Message History Construction --- #
+        # If we got back an empty prompt (error condition), handle it
+        if not prompt_details_dialogue.get("system"):
+            print("[ERROR] Failed to construct dialogue prompt. Using fallback.")
+            prompt_details_dialogue = {
+                "system": f"You are {companion_state.get('name', partner_id)}. Respond naturally in character. Use end_dialogue tool ONLY for clear farewells.",
+                "messages": [{"role": "user", "content": player_utterance}]
+            }
+        
+        # --- Message History Construction for proper history --- #
+        # The construct_dialogue_prompt function doesn't handle this part well, so we need to set it up
         messages_for_llm = []
         for entry in dialogue_history:
             role = "user" if entry["speaker"] == "player" else "assistant"
             content_block = [{"type": "text", "text": entry["utterance"]}]
             messages_for_llm.append({"role": role, "content": content_block})
         
-        # --- Prepare call --- #
-        prompt_details_dialogue = {
-            "system": system_context,
-            "messages": messages_for_llm
-        }
+        # Update the messages in prompt_details
+        prompt_details_dialogue["messages"] = messages_for_llm
 
         print(f"\n>>> Asking {companion_state.get('name', partner_id)} for response... (End dialogue tool available) <<<")
         dialogue_tools = [end_dialogue_tool] # Use imported tool

@@ -453,6 +453,15 @@ class GameApp:
         self.narrative_display.value = f"{current_narrative}\n\n> **{input_text}**\n\n*Processing...*"
         self.page.update()
         
+        # Ensure settings are available in game_state before processing
+        if "settings" not in self.game_state and os.path.exists("game_settings.json"):
+            try:
+                with open("game_settings.json", "r") as f:
+                    self.game_state["settings"] = json.load(f)
+                print("[INFO] Loaded settings from file into game state")
+            except Exception as e:
+                print(f"[ERROR] Failed to load settings: {e}")
+        
         # Process in background thread
         Thread(target=self.process_player_turn, args=(input_text,), daemon=True).start()
     
