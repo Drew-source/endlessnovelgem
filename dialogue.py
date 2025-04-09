@@ -1,34 +1,43 @@
-"""Dialogue Engine: Handles conversation flow, history, and summarization."""
+"""Dialogue Engine: Handles conversation flow and prompt construction."""
 import anthropic
 import google.generativeai as genai
-from config import end_dialogue_tool, exchange_item_tool, update_relationship_tool # Import the specific tools needed
+import copy # Import copy
+# Removed tool imports
 from utils import call_claude_api
 from visuals import call_gemini_api # Needed for summarize_conversation
 from character_manager import CharacterManager # Import manager for type hint
 
 # --- Dialogue History Formatting --- #
-def format_dialogue_history_for_prompt(history: list) -> str:
+def format_dialogue_history_for_prompt(history: list, character_manager: CharacterManager) -> str:
     """Formats the dialogue history list into a string suitable for the prompt."""
     formatted_lines = []
     for entry in history:
-        speaker = entry.get("speaker", "Unknown").replace("_", " ").title()
+        speaker = entry.get("speaker", "Unknown")
         utterance = entry.get("utterance", "...")
-        formatted_lines.append(f"{speaker}: {utterance}")
+        if speaker == "player":
+            speaker_label = "Player"
+        elif speaker == "gamemaster": # Handle GM outcome message
+            speaker_label = "System"
+            utterance = entry.get("utterance", "(System note)") # Don't just show the raw outcome maybe?
+        else:
+            speaker_label = character_manager.get_name(speaker) or speaker
+        formatted_lines.append(f"{speaker_label}: {utterance}")
     return "\n".join(formatted_lines)
 
 # --- Dialogue Turn Handling --- #
 def handle_dialogue_turn(
     game_state: dict,
     player_utterance: str,
-    character_manager: CharacterManager, # Added manager
+    character_manager: CharacterManager, 
     claude_client: anthropic.Anthropic | None,
     claude_model_name: str | None,
-    dialogue_template: str # Pass loaded template
+    dialogue_template: str,
+    outcome_message: str | None = None # Added argument
 ) -> tuple[anthropic.types.Message | None, dict]:
-    """Prepares and initiates the LLM call for a single dialogue turn.
+    """Prepares and initiates the LLM call for dialogue TEXT ONLY, incorporating GM outcome.
 
-    Adds player utterance to history, constructs prompt details, calls API
-    with the end_dialogue tool enabled, and returns the raw response object
+    Adds player utterance and GM outcome (if any) to history copy for prompt context,
+    constructs prompt details, calls API, and returns the raw response object
     and the prompt details used.
 
     Args:
@@ -38,6 +47,7 @@ def handle_dialogue_turn(
         claude_client: Initialized Anthropic client.
         claude_model_name: Name of the Claude model.
         dialogue_template: The loaded dialogue system prompt template.
+        outcome_message: The resolved outcome message from the action resolver.
 
     Returns:
         A tuple containing:
@@ -45,124 +55,127 @@ def handle_dialogue_turn(
         - The prompt_details dictionary used for the API call.
     """
     partner_id = game_state.get('dialogue_partner')
-    prompt_details_dialogue = {} # Initialize for return in case of early exit
-    response_obj = None # Initialize response object
+    prompt_details_dialogue = {}
+    response_obj = None
 
-    if not partner_id:
-        print("[ERROR] Dialogue active but no partner ID found in game_state.")
+    if not partner_id: # Basic validation
+        print("[ERROR] Dialogue active but no partner ID.")
         game_state['dialogue_active'] = False
         return None, prompt_details_dialogue
 
-    # Use manager to get character data
     companion_state = character_manager.get_character_data(partner_id)
     if not companion_state:
-        print(f"[ERROR] Dialogue active but no valid partner data found for ID '{partner_id}' in handle_dialogue_turn.")
-        game_state['dialogue_active'] = False # End dialogue on error
+        print(f"[ERROR] No valid partner data for ID '{partner_id}'.")
+        game_state['dialogue_active'] = False
         return None, prompt_details_dialogue
 
-    print(f"[DEBUG] Preparing dialogue turn with partner: {partner_id}")
-    memory = companion_state.setdefault('memory', {'dialogue_history': []})
-    dialogue_history = memory.setdefault('dialogue_history', [])
-
-    # 1. Add player utterance to history
-    dialogue_history.append({"speaker": "player", "utterance": player_utterance})
+    print(f"[DEBUG] Preparing dialogue turn with {partner_id}")
+    
+    # --- History Management for Prompt --- #
+    # Work on a COPY of the history for this turn's prompt context
+    persistent_history = character_manager.get_dialogue_history(partner_id, ensure_list=True)
+    history_for_prompt = copy.deepcopy(persistent_history)
+    
+    # Add player utterance
+    history_for_prompt.append({"speaker": "player", "utterance": player_utterance})
+    
+    # Add GM outcome message if provided
+    if outcome_message:
+        print(f"[DEBUG] Injecting GM Outcome for prompt: {outcome_message}")
+        history_for_prompt.append({"speaker": "gamemaster", "utterance": f"[Action Outcome: {outcome_message}]"})
 
     # 2. Prepare prompt details for LLM
     try:
-        # --- Fetch Context Data using CharacterManager --- #
+        # --- Fetch & Format Context Data --- #
         character_name = companion_state.get('name', partner_id)
         trust_score = character_manager.get_trust(partner_id) or 0
         active_statuses_dict = character_manager.get_active_statuses(partner_id) or {}
         inventory_list = character_manager.get_inventory(partner_id) or []
+        narrative_context_summary = game_state.get('narrative_context_summary', 'Recent events unclear.')
+        follow_status = character_manager.get_follow_status(partner_id)
 
-        # --- Format Context for Prompt --- #
-        # Basic trust description
-        if trust_score > 50: trust_level_description = "Very High (Friendly/Helpful)"
-        elif trust_score > 10: trust_level_description = "Positive (Neutral/Open)"
-        elif trust_score < -50: trust_level_description = "Very Low (Hostile/Distrustful)"
-        elif trust_score < -10: trust_level_description = "Negative (Wary/Uncooperative)"
+        if trust_score > 50: trust_level_description = "Very High"
+        elif trust_score > 10: trust_level_description = "Positive"
+        elif trust_score < -50: trust_level_description = "Very Low"
+        elif trust_score < -10: trust_level_description = "Negative"
         else: trust_level_description = "Neutral"
 
-        # Active statuses string
-        status_strings = []
-        for status, data in active_statuses_dict.items():
-            duration = data.get('duration')
-            status_strings.append(f"{status.capitalize()}({duration} turns remaining)" if duration else status.capitalize())
+        status_strings = [f"{s.capitalize()}({d.get('duration')} turns)" if d.get('duration') else s.capitalize() for s, d in active_statuses_dict.items()]
         active_statuses_str = ", ".join(status_strings) or "Normal"
-        
-        # Inventory string (limit length?)
         inventory_str = ", ".join(inventory_list) or "Nothing"
-
-        # Character ID for prompt examples
+        follow_status_str = "Yes" if follow_status else "No"
         character_id_str = partner_id
+        
+        # Format the history *including* player utterance and GM outcome
+        formatted_history_string = format_dialogue_history_for_prompt(history_for_prompt, character_manager)
 
         # --- System Prompt Construction --- #
-        if "Error:" in dialogue_template:
-             print(f"[WARN] Using fallback dialogue system prompt due to template load error: {dialogue_template}")
-             # Fallback should be minimal and mention tool unavailability
-             system_context = f"You are {character_name}. Respond naturally. Tool usage may be limited due to error."
-        else:
+        system_context = f"You are {character_name}. Respond naturally."
+        if "Error:" not in dialogue_template:
             try:
-                 # Format the prompt with all the context
                  system_context = dialogue_template.format(
                      character_name=character_name,
-                     character_id=character_id_str, # Pass ID for tool examples
+                     character_id=character_id_str,
                      trust_score=trust_score,
                      relation_to_player_summary=trust_level_description,
                      active_statuses=active_statuses_str,
                      character_inventory=inventory_str,
                      location=game_state.get('location', 'Unknown'),
-                     time_of_day=game_state.get('time_of_day', 'Unknown')
+                     time_of_day=game_state.get('time_of_day', 'Unknown'),
+                     narrative_context=narrative_context_summary,
+                     follow_status_str=follow_status_str,
+                     dialogue_history=formatted_history_string, 
+                     # player_utterance is now part of the formatted_history_string
+                     # Remove player_utterance key if the prompt doesn't expect it separately anymore
+                     # Let's assume the prompt was updated to just use dialogue_history
+                     # player_utterance="" # Or remove key entirely
                  )
             except KeyError as e:
-                 print(f"[ERROR] Missing key in dialogue system template: {e}. Using fallback prompt.")
-                 system_context = f"You are {character_name}. Respond naturally. (Template key error: {e})"
+                 print(f"[ERROR] Key error formatting dialogue template: {e}. Using fallback.")
             except Exception as e:
-                 print(f"[ERROR] Failed to format dialogue system template: {e}. Using fallback prompt.")
-                 system_context = f"You are {character_name}. Respond naturally. (Template format error)"
+                 print(f"[ERROR] Failed formatting dialogue template: {e}. Using fallback.")
         
         # --- Message History Construction (for API) --- #
+        # Use the history_for_prompt which includes the latest player/GM messages
         messages_for_llm = []
-        for entry in dialogue_history:
-            role = "user" if entry["speaker"] == "player" else "assistant"
-            # Correctly access the utterance and format as a content block
-            utterance = entry.get("utterance", "") # Get the utterance string
-            content_block = [{"type": "text", "text": utterance}] # Format for API
-                
+        for entry in history_for_prompt: 
+            speaker = entry.get("speaker")
+            utterance = entry.get("utterance", "") 
+            role = "user" if speaker == "player" or speaker == "gamemaster" else "assistant"
+            # Prepend speaker/role for clarity in API history?
+            # content_text = f"{speaker_label}: {utterance}" # Use the label from formatter? No, API expects clean text.
+            content_block = [{"type": "text", "text": utterance}]
             messages_for_llm.append({"role": role, "content": content_block})
-
-        # The dialogue_history and player_utterance are handled via the messages list.
-        # The system_context variable already contains the prompt formatted with character context.
-        # The redundant second formatting step is removed.
         
         # --- Prepare API call --- #
         prompt_details_dialogue = {
-            "system": system_context, # Pass the context-formatted system prompt
-            "messages": messages_for_llm # Pass the history prepared for the API
+            "system": system_context, 
+            "messages": messages_for_llm 
         }
 
-        print(f"\n>>> Asking {character_name} for response... (Tools: End Dialogue, Exchange Item, Update Relationship) <<<")
-        # Include all tools available during dialogue
-        dialogue_tools = [end_dialogue_tool, exchange_item_tool, update_relationship_tool]
+        print(f"\n>>> Asking {character_name} for dialogue text (incorporating outcome)... <<<")
         
-        # Call API via utility function
+        # Call API - NO TOOLS passed to content generator
         response_obj = call_claude_api(
             claude_client=claude_client,
             model_name=claude_model_name,
             prompt_details=prompt_details_dialogue,
-            tools=dialogue_tools
+            tools=None
         )
 
     except Exception as e:
-        print(f"[ERROR] Exception during dialogue turn LLM call preparation or invocation: {e}")
+        print(f"[ERROR] Exception during dialogue turn prep/call: {e}")
+        import traceback
+        traceback.print_exc()
         return None, {}
 
-    # 3. Return the RAW response object and prompt details
+    # Return the RAW response object and prompt details
     return response_obj, prompt_details_dialogue
 
 # --- Dialogue Summarization --- #
 def summarize_conversation(
     dialogue_history: list,
+    character_manager: CharacterManager, # Added manager
     gemini_client: genai.GenerativeModel | None, # Pass client
     gemini_model_name: str | None, # Pass model name
     summarization_template: str # Pass template content
@@ -171,6 +184,7 @@ def summarize_conversation(
 
     Args:
         dialogue_history: List of dialogue entries [{'speaker': ..., 'utterance': ...}].
+        character_manager: The CharacterManager instance.
         gemini_client: Initialized Google AI client.
         gemini_model_name: Name of the Gemini model to use.
         summarization_template: The loaded content of the summarization prompt template.
@@ -193,7 +207,7 @@ def summarize_conversation(
     print("\n>>> Summarizing conversation... <<<")
     try:
         # Format history for the prompt
-        history_string = format_dialogue_history_for_prompt(dialogue_history) # Reuse helper
+        history_string = format_dialogue_history_for_prompt(dialogue_history, character_manager) # Reuse helper
         
         # Format the passed template
         try:
@@ -217,6 +231,6 @@ def summarize_conversation(
 
     except Exception as e:
         print(f"[ERROR] Failed to summarize conversation: {e}")
-        # import traceback
-        # traceback.print_exc() # Uncomment for detailed debugging
+        import traceback
+        traceback.print_exc() # Uncomment for detailed debugging
         return "(Conversation summary failed due to unexpected error.)"

@@ -1,6 +1,9 @@
 '''Character Manager: Handles character creation, data storage, and retrieval.'''
 import random
+import json
+import os
 import uuid
+from config import INITIAL_TRUST # Assuming these are defined
 
 # --- Archetype Configuration (Placeholder) ---
 # Define basic configurations for different character types.
@@ -41,21 +44,24 @@ ARCHETYPE_CONFIG = {
 }
 
 class CharacterManager:
-    """Manages character data within the game state."""
+    """Manages character data, including stats, inventory, relationships, and memory."""
 
-    def __init__(self, character_data_dict: dict):
-        """
-        Initializes the CharacterManager.
+    def __init__(self, initial_companions_state: dict):
+        self.characters = initial_companions_state
+        # Ensure essential nested structures exist for initial characters
+        for char_id, data in self.characters.items():
+            data.setdefault('memory', {})
+            data['memory'].setdefault('dialogue_history', [])
+            data.setdefault('relationships', {})
+            data['relationships'].setdefault('player', {})
+            data['relationships']['player'].setdefault('trust', INITIAL_TRUST)
+            data['relationships']['player'].setdefault('temporary_statuses', {})
+            data.setdefault('inventory', [])
+            data.setdefault('stats', {}) # Ensure stats dict exists
+            data.setdefault('following_player', False) # Ensure following status exists
+            data.setdefault('location', None) # Ensure location exists
 
-        Args:
-            character_data_dict: A direct reference to the dictionary within the 
-                                 game_state that holds all character data 
-                                 (e.g., game_state['companions']).
-        """
-        if not isinstance(character_data_dict, dict):
-            raise TypeError("character_data_dict must be a dictionary.")
-        self.characters = character_data_dict
-        print(f"[INFO] CharacterManager initialized with {len(self.characters)} existing characters.")
+        print(f"[DEBUG CM] Initialized with {len(self.characters)} characters.")
 
     def _get_character_ref(self, character_id: str) -> dict | None:
         """Safely retrieves a reference to a character's data dictionary."""
@@ -120,7 +126,8 @@ class CharacterManager:
                     'temporary_statuses': {}
                 }
                 # Add other relationship targets here later
-            }
+            },
+            'following_player': False, # Default follow status
         }
 
         self.characters[character_id] = new_character
@@ -129,7 +136,7 @@ class CharacterManager:
 
     # --- Basic Getters ---
     def get_character_data(self, character_id: str) -> dict | None:
-        """Retrieves the entire data dictionary for a character."""
+        """Returns the full data dictionary for a character, or None if not found."""
         return self._get_character_ref(character_id)
 
     def get_all_character_ids(self) -> list[str]:
@@ -142,7 +149,7 @@ class CharacterManager:
         return char_ref.get('name') if char_ref else None
     
     def get_location(self, character_id: str) -> str | None:
-        """Gets the current location ID/name of a character."""
+        """Gets the current location ID of a character."""
         char_ref = self._get_character_ref(character_id)
         return char_ref.get('location') if char_ref else None
 
@@ -237,7 +244,7 @@ class CharacterManager:
 
     # --- Inventory Methods (Placeholders / Basic Getters) ---
     def get_inventory(self, character_id: str) -> list[str] | None:
-        """Gets the inventory list for a character."""
+        """Gets the inventory list of a character."""
         char_ref = self._get_character_ref(character_id)
         if char_ref:
             return char_ref.setdefault('inventory', [])
@@ -287,19 +294,19 @@ class CharacterManager:
         return None
 
     def get_trust(self, character_id: str, target_id: str = 'player') -> int | None:
-        """Gets the trust score towards a specific target (default: player)."""
+        """Gets the trust score of character_id towards target_id (default player)."""
         rel_ref = self._get_relationship_ref(character_id, target_id)
         return rel_ref.get('trust', 0) if rel_ref else None # Default to 0 if structure missing
 
     def update_trust(self, character_id: str, change: int, target_id: str = 'player') -> bool:
-        """Updates the trust score towards a target, clamping between -100 and 100."""
+        """Updates the trust score of character_id towards target_id."""
         rel_ref = self._get_relationship_ref(character_id, target_id)
         if rel_ref:
             current_trust = rel_ref.get('trust', 0)
             new_trust = max(-100, min(100, current_trust + change))
             if new_trust != current_trust:
                 rel_ref['trust'] = new_trust
-                print(f"  [State Update] Trust for {character_id} -> {target_id} set to {new_trust}.")
+                print(f"  [State Update] Updated trust for {character_id} towards {target_id}: {current_trust} -> {new_trust}")
                 return True
             else:
                 # No change occurred (already at min/max)
@@ -316,18 +323,18 @@ class CharacterManager:
         if rel_ref:
             statuses = rel_ref.setdefault('temporary_statuses', {})
             statuses[status_name] = {'duration': duration}
-            print(f"  [State Update] Status '{status_name}' set for {character_id} -> {target_id} ({duration} turns)." )
+            print(f"  [State Update] Set status '{status_name}' for {character_id} towards {target_id} (Duration: {duration})")
             return True
         return False
 
     def remove_status(self, character_id: str, status_name: str, target_id: str = 'player') -> bool:
-        """Removes a temporary status if it exists."""
+        """Removes a temporary status."""
         rel_ref = self._get_relationship_ref(character_id, target_id)
         if rel_ref:
             statuses = rel_ref.setdefault('temporary_statuses', {})
             if status_name in statuses:
                 del statuses[status_name]
-                print(f"  [State Update] Status '{status_name}' removed for {character_id} -> {target_id}." )
+                print(f"  [State Update] Removed status '{status_name}' for {character_id} towards {target_id}.")
                 return True
             else:
                 # Status wasn't present, but that's not an error in removal
@@ -335,7 +342,7 @@ class CharacterManager:
         return False
 
     def get_active_statuses(self, character_id: str, target_id: str = 'player') -> dict | None:
-        """Gets the dictionary of active statuses for a target."""
+        """Gets the dictionary of temporary statuses of character_id towards target_id."""
         rel_ref = self._get_relationship_ref(character_id, target_id)
         return rel_ref.get('temporary_statuses') if rel_ref else None
 
@@ -367,3 +374,153 @@ class CharacterManager:
             char_ref['location'] = location
             return True
         return False 
+
+    # --- Follow Status --- #
+
+    def set_follow_status(self, character_id: str, following: bool) -> bool:
+        """Sets the character's following_player status."""
+        char_ref = self._get_character_ref(character_id)
+        if char_ref:
+            char_ref['following_player'] = bool(following) # Ensure boolean
+            status_text = "following" if following else "not following"
+            print(f"  [DEBUG CM] Set {character_id} status to {status_text} player.")
+            return True
+        print(f"[WARN CM] Failed to set follow status for non-existent character {character_id}.")
+        return False
+
+    def get_follow_status(self, character_id: str) -> bool | None:
+        """Gets the character's following_player status.
+
+        Returns:
+            The boolean status if the character exists, otherwise None.
+        """
+        char_ref = self._get_character_ref(character_id)
+        if char_ref:
+            # Return the status, defaulting to False if somehow not set
+            return char_ref.get('following_player', False)
+        return None # Character not found 
+
+    # --- Memory / Dialogue History --- #
+    
+    # *** NEW METHOD ***
+    def get_dialogue_history(self, character_id: str, ensure_list: bool = False) -> list | None:
+        """Gets the dialogue history list for a character.
+        
+        Args:
+            character_id: The ID of the character.
+            ensure_list: If True, returns an empty list if history is missing,
+                         otherwise returns None.
+                         
+        Returns:
+            The list of dialogue entries, or None/[] based on ensure_list.
+        """
+        char_data = self.get_character_data(character_id)
+        if char_data:
+            memory = char_data.setdefault('memory', {})
+            history = memory.get('dialogue_history')
+            if history is not None:
+                return history
+            elif ensure_list:
+                memory['dialogue_history'] = [] # Ensure it exists for next time
+                return []
+            else:
+                return None
+        elif ensure_list:
+             return [] # Character not found, return empty list if requested
+        else:
+             return None # Character not found
+
+    # *** NEW METHOD ***
+    def add_dialogue_entry(self, character_id: str, entry: dict):
+        """Adds a new entry to a character's dialogue history.
+        
+        Args:
+            character_id: The ID of the character.
+            entry: A dictionary representing the dialogue entry (e.g., {'speaker': ..., 'utterance': ...}).
+        """
+        if not isinstance(entry, dict) or 'speaker' not in entry or 'utterance' not in entry:
+            print(f"[WARN CM] Invalid dialogue entry format for {character_id}: {entry}")
+            return False
+            
+        char_data = self.get_character_data(character_id)
+        if char_data:
+            memory = char_data.setdefault('memory', {})
+            history = memory.setdefault('dialogue_history', [])
+            # Optional: Prevent adding exact duplicate of the very last message?
+            if history and history[-1] == entry:
+                print(f"[DEBUG CM] Skipping duplicate dialogue entry for {character_id}.")
+                return True # Still consider it success
+            history.append(entry)
+            # print(f"[DEBUG CM] Added dialogue entry for {character_id}: {entry['speaker']}")
+            return True
+        else:
+            print(f"[WARN CM] Cannot add dialogue entry for unknown character: {character_id}")
+            return False
+
+    # --- Character Generation --- #
+    def _generate_unique_id(self, name_hint: str | None = None) -> str:
+        """Generates a unique ID, potentially using a hint."""
+        base_id = "char"
+        if name_hint:
+            # Basic sanitization for ID
+            sanitized_hint = "".join(c for c in name_hint.lower() if c.isalnum() or c == '_').replace(" ", "_")
+            if sanitized_hint:
+                base_id = sanitized_hint
+        
+        unique_id = base_id
+        counter = 1
+        while unique_id in self.characters:
+            unique_id = f"{base_id}_{counter}"
+            counter += 1
+        return unique_id
+
+    def generate_character(self, archetype: str, location: str, name_hint: str | None = None) -> str | None:
+        """Generates a new character based on archetype rules (basic example)."""
+        # Basic archetype stats/info (Expand this significantly)
+        archetype_data = {}
+        if archetype == "merchant":
+            archetype_data = {
+                'name': name_hint or "Traveling Merchant",
+                'stats': {'strength': 8, 'charisma': 14},
+                'inventory': ['health_potion', 'mana_potion', 'rope', 'coins'],
+                'description': "A merchant carrying a large backpack."
+            }
+        elif archetype == "guard":
+             archetype_data = {
+                'name': name_hint or "City Guard",
+                'stats': {'strength': 14, 'charisma': 9},
+                'inventory': ['spear', 'chainmail', 'helmet'],
+                 'description': "A stern-faced guard in city livery."
+            }
+        elif archetype == "foe":
+             archetype_data = {
+                'name': name_hint or "Shadowy Figure",
+                'stats': {'strength': 12, 'charisma': 7},
+                'inventory': ['dagger', 'dark_cloak'],
+                 'description': "A figure lurking in the shadows."
+            }
+        else: # Default / Unknown
+            print(f"[WARN CM] Unknown archetype: {archetype}. Using default.")
+            archetype_data = {
+                'name': name_hint or "Mysterious Stranger",
+                'stats': {'strength': 10, 'charisma': 10},
+                'inventory': [],
+                'description': "An unremarkable individual."
+            }
+
+        new_id = self._generate_unique_id(archetype_data.get('name'))
+        
+        self.characters[new_id] = {
+            'name': archetype_data.get('name', "Unknown"),
+            'archetype': archetype,
+            'description': archetype_data.get('description', ""),
+            'traits': [], # Add traits based on archetype?
+            'location': location,
+            'inventory': archetype_data.get('inventory', []),
+            'stats': archetype_data.get('stats', {}),
+            'memory': {'dialogue_history': []},
+            'relationships': {'player': {'trust': INITIAL_TRUST, 'temporary_statuses': {}}},
+            'following_player': False
+        }
+        print(f"[INFO CM] Generated character '{self.characters[new_id]['name']}' ({new_id}) at {location}.")
+        return new_id 
