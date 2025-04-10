@@ -1,14 +1,14 @@
 Current Game Context:
 - Location: {player_location}
-- Characters Present: {characters_present}
-- Companions Present: {companions_present}
+- Characters Present (NPCs): {characters_present}
+- Companions Present: {companions_present} (IDs: {companion_ids_present})
 - Time: {time_of_day}
-- Key Information: {key_information}
+- Key Information (Flags): {key_information}
 
 Recent Events Summary:
 {recent_events_summary}
 
-Current Conversation Target: {dialogue_target}
+Current Objective: {current_objective}
 
 Player Action: {last_player_action}
 
@@ -17,4 +17,7 @@ Your Task:
 2.  Describe the environment and any relevant character/companion reactions and dialogue.
 3.  Keep the tone consistent with a fantasy setting.
 4.  Format dialogue clearly (e.g., Character Name: "Dialogue text").
-5.  Remember to use the `update_game_state` tool if the narrative requires mechanical changes to the game state, as instructed in your system prompt. 
+5.  Remember to use the appropriate tools (`update_game_state`, `start_dialogue`, `end_dialogue`) if the narrative requires mechanical changes or dialogue transitions, as instructed in your system prompt.
+    *   Use `start_dialogue` with a companion ID from `{companion_ids_present}` if the player wants to talk to them.
+    *   Use `end_dialogue` if the conversation ends.
+    *   Use `update_game_state` for other state changes (location, inventory, etc.). 

@@ -1,13 +1,29 @@
 # Endless Novel - Development Log
 
-**Project Root:** `C:\Users\Marcus\Documents\Cursor\Endless Novel\` *(Please verify if this path has changed)*
-**Current Team Focus:** Preparing to implement state update parsing logic (`apply_updates_recursive`).
-**Suggested Next Steps:** Implement the `apply_updates_recursive` function in `game_v0.py`.
-**Blockers:** None currently noted (API key setup will be needed later).
+**Project Root:** `/Users/luke/Desktop/Coding/endlessnovelgem`
+**Current Team Focus:** Designing and starting implementation of a dialogue system with character memory.
+**Suggested Next Steps:** Review the created `docs/dialogue_system_design_v1.md` document and then proceed with implementation step 1 (modifying `INITIAL_GAME_STATE` in `game_v0.py`).
+**Blockers:** None.
 
 --- Reference `docs/project_structure.md` for the current file layout. ---
 
 **Log Entries (Newest First):**
+
+**2024-08-04 10:00 (Estimate):** *(Timestamp for this action)*
+*   **Goal:** Design a dialogue system with persistent character memory.
+*   **Input Context:** User request to implement dialogue distinct from narration, including character-specific memory influencing conversations and routing between dialogue/narrative modes.
+*   **Discussion:** Outlined requirements: separate dialogue mode, character memory (starting with history), state flags (`dialogue_active`, `dialogue_partner`), routing logic (enter/exit dialogue, summarization), new LLM prompts for dialogue generation and summarization. Agreed to create a design document.
+*   **Affected Files/State:** Created `docs/dialogue_system_design_v1.md` with the proposed design. Updated `docs/project_structure.md` to include the new file. Updated `docs/development_log.md` (this entry, updated project root and focus).
+*   **Decision:** Adopted the plan outlined in `docs/dialogue_system_design_v1.md` as the blueprint for implementation.
+*   **Next:** Review the design document, then modify `INITIAL_GAME_STATE` in `game_v0.py`.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for previous actions - potentially backfill later)*
+*   **Goal:** Setup Python development environment and fetch project code.
+*   **Input Context:** User request to pull repo and setup environment.
+*   **Discussion:** Cloned repo. Identified dependencies (`anthropic`, `google-generativeai`, `python-dotenv`) from `game_v0.py`. Created Python virtual environment (`venv`). Installed dependencies. Generated `requirements.txt`. Created `.env` with placeholders. Added user-provided API keys to `.env`. Added `venv/` and `.env` to `.gitignore`. Troubleshot and successfully ran `game_v0.py`.
+*   **Affected Files/State:** Cloned repo into `endlessnovelgem/`. Created `endlessnovelgem/venv/`. Created `endlessnovelgem/requirements.txt`. Created and populated `endlessnovelgem/.env`. Modified `endlessnovelgem/.gitignore`. Ran `endlessnovelgem/game_v0.py`.
+*   **Decision:** Standard Python virtual environment setup completed.
+*   **Next:** Proceed with feature development (Dialogue System).
 
 **YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
 *   **Goal:** Create a dedicated file to track project structure and remove outdated snapshots from the log.
@@ -151,4 +167,101 @@
 *   **Discussion:** Implemented basic history by passing recent messages back to Claude. Modified `construct_claude_prompt` to accept history, `call_claude_api` to use it (with simple truncation), and `main` loop to manage the history list. Discussed limitations of simple truncation and the potential for future enhancements (Summarization, RAG) for better long-term memory, deciding to defer these more complex approaches.
 *   **Affected Files/State:** Modified `game_v0.py` (main loop, call_claude_api, construct_claude_prompt, handle_claude_response). Updated `docs/intent_v0.md` (Section 3) to note current approach and future work on context management.
 *   **Decision:** Proceed with simple truncation for V0 history management; document need for future enhancements.
-*   **Next:** Test history implementation. Refine prompts or add other features. 
+*   **Next:** Test history implementation. Refine prompts or add other features.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Implement and debug enhanced dialogue tools (item exchange, relationship updates).
+*   **Input Context:** Successful test of character generation and basic dialogue initiation. Decision to proceed with adding dialogue interaction tools.
+*   **Discussion & Actions:**
+    *   **Defined Tools:** Added `exchange_item_tool` and `update_relationship_tool` schemas to `config.py`.
+    *   **Enabled Tools in Dialogue:** Modified `dialogue.py::handle_dialogue_turn` to include the new tools in the list passed to the LLM API call.
+    *   **Updated Dialogue Prompt:** Significantly revised `prompts/dialogue_system.txt` to:
+        *   Include placeholders for character context (inventory, trust score, statuses).
+        *   Provide detailed descriptions and usage guidelines for all three dialogue tools (`end_dialogue`, `exchange_item`, `update_relationship`).
+        *   Instruct the LLM on how character state should influence behavior and tool use.
+    *   **Added Context Fetching:** Modified `dialogue.py::handle_dialogue_turn` to fetch inventory, trust, and status data using `CharacterManager` and format it for the prompt placeholders.
+    *   **Implemented Tool Handling:** Added `elif` branches in `main.py::handle_claude_response` to process calls to `exchange_item_tool` and `update_relationship_tool`, extracting parameters and calling the relevant (initially placeholder) `CharacterManager` methods.
+    *   **Implemented Character Manager Methods:** Implemented the core logic for inventory (`add_item`, `remove_item`, `has_item`) and relationship methods (`update_trust`, `set_status`, `remove_status`, `decrement_statuses`) in `character_manager.py`.
+    *   **Implemented Item Exchange Logic:** Added logic in `main.py::handle_claude_response` for `exchange_item_tool` to handle transfers involving both player inventory and `CharacterManager` methods, including checks and basic rollback attempt.
+    *   **Debugging Dialogue Errors:** 
+        *   Fixed `IndexError` in `dialogue.py::handle_dialogue_turn` caused by redundant prompt formatting after context insertion.
+        *   Escaped `{}` -> `{{}}` in prompt examples (`prompts/dialogue_system.txt`) to prevent formatting errors.
+        *   Fixed `KeyError: 'content'` in `dialogue.py::handle_dialogue_turn` by correctly accessing `"utterance"` when building API message history.
+        *   Fixed `NameError` in `main.py::handle_claude_response` by adding missing imports for `exchange_item_tool` and `update_relationship_tool` from `config.py`.
+*   **Affected Files/State:** Modified `config.py`, `dialogue.py`, `main.py`, `character_manager.py`, `prompts/dialogue_system.txt`, `docs/development_log.md` (this entry).
+*   **Decision:** Proceeded with implementing and debugging the core logic for dialogue-driven item exchange and relationship updates.
+*   **Current Status:** Dialogue system includes tools for ending conversation, exchanging items, and updating relationships. Core logic for processing these tools and updating state via `CharacterManager` is implemented. Dialogue prompts provide context (inventory, trust, status) and tool usage instructions. Basic functionality appears stable after debugging.
+*   **Next:** Thorough testing of the new dialogue tools (item exchange variations, trust changes, status effects). Further prompt refinement based on testing.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Debug character generation and dialogue initiation, confirm tool usage.
+*   **Input Context:** Previous tests showed Claude failing to use `create_character` tool appropriately and dialogue failing due to `NameError` and incorrect character ID usage.
+*   **Discussion & Actions:**
+    *   **Fixed `NameError`:** Added missing import for `DEBUG_IGNORE_LOCATION` in `main.py`.
+    *   **Refined Prompt Instructions:** Further strengthened instructions in `prompts/claude_system.txt` to more clearly guide Claude on when to use `create_character` (especially for player-initiated summons) versus `update_game_state`.
+    *   **Removed Old NPC Handling:** Removed `current_npcs_add/remove` fields from `update_game_state_tool` schema (`config.py`) and the corresponding handling code from `narrative.py::apply_tool_updates` to prevent confusion and enforce usage of `CharacterManager`.
+    *   **Testing:** Successfully tested the character generation flow. Player action intended to summon a character correctly triggered Claude to use the `create_character_tool`. Subsequent attempt to initiate dialogue with the newly generated character using their name correctly triggered Claude to use the `start_dialogue` tool with the *exact* `character_id` provided by the `CharacterManager`.
+*   **Affected Files/State:** Modified `config.py`, `narrative.py`, `main.py`, `prompts/claude_system.txt`, `docs/development_log.md` (this entry).
+*   **Decision:** Confirmed character generation and dialogue initiation tools are functioning correctly with the `CharacterManager` and refined prompts.
+*   **Future Work / Note:** The `DEBUG_IGNORE_LOCATION` flag is a temporary measure. A more robust location management system will be needed in the future to handle character presence based on actual game world locations, at which point this flag should be set to `False` or removed.
+*   **Current Status:** Core character management (creation, storage, basic retrieval) and dynamic generation via LLM tool calls are functional. Dialogue can be initiated with generated characters. Location checks are temporarily bypassed for testing.
+*   **Next:** Proceed with implementing the enhanced dialogue mechanics (item exchange, relationship updates) using the `CharacterManager`'s placeholder methods.
+
+**[Date - Placeholder] - Character Manager V1 Implementation**
+
+**Context:** Decision to implement a CharacterManager module for better organization and scalability before adding enhanced dialogue features.
+
+**Actions & Decisions:**
+
+*   Created `character_manager.py` with `CharacterManager` class.
+*   Defined `ARCHETYPE_CONFIG` with initial data for 'townsperson', 'companion', 'foe', 'love_interest'.
+*   Implemented `create_character` method for direct character addition.
+*   Implemented `generate_character` method with randomization logic based on archetype config.
+*   Defined `create_character_tool` schema in `config.py`.
+*   Refactored `main.py`:
+    *   Updated `INITIAL_GAME_STATE` structure for Varnas (archetype, relationships, etc.).
+    *   Instantiated `CharacterManager`.
+    *   Added handling for `create_character_tool` in `handle_claude_response`, calling the manager.
+    *   Passed manager instance to relevant functions.
+*   Refactored `narrative.py`:
+    *   Updated `construct_claude_prompt` to use manager for presence checks.
+    *   Added `create_character_tool` to available narrative tools.
+*   Refactored `dialogue.py`:
+    *   Updated `handle_dialogue_turn` to accept and use manager for fetching partner data.
+*   Created `docs/character_manager_summary.md` to document the new module.
+
+**Current Status:**
+
+*   CharacterManager module created with generation logic.
+*   Tool for dynamic character creation implemented and integrated.
+*   Core game loop refactored to use the manager.
+
+**Next Steps:**
+
+*   Test character generation via the `create_character_tool`.
+*   Implement remaining core CharacterManager methods (inventory, relationship modifiers).
+*   Proceed with implementing enhanced dialogue mechanics (item exchange, relationship updates).
+
+**2024-08-04 [Time - Placeholder]:** *(Timestamp for this action)*
+*   **Goal:** Refactor monolithic `game_v0.py` into logical modules and verify functionality.
+*   **Input Context:** Previous state with functional dialogue system in `game_v0.py`. User request to modularize.
+*   **Discussion & Actions:**
+    *   Developed refactoring plan: Backup original, create module files (`config`, `utils`, `visuals`, `dialogue`, `narrative`, `main`), migrate code, add imports, verify.
+    *   Backed up `game_v0.py` to `game_v0_backup.py`.
+    *   Created empty module files.
+    *   Migrated constants/tools to `config.py`.
+    *   Migrated utility functions (`load_prompt_template`, `call_claude_api`) to `utils.py`.
+    *   Migrated Gemini functions (`call_gemini_api`, `construct_gemini_prompt`) to `visuals.py`.
+    *   Migrated dialogue functions (`handle_dialogue_turn`, `summarize_conversation`, `format_dialogue_history_for_prompt`) to `dialogue.py`.
+    *   Migrated narrative functions (`apply_tool_updates`, `construct_claude_prompt`, `handle_narrative_turn`) to `narrative.py`.
+    *   Reconstructed `main.py` with core loop, API init, central response handling (`handle_claude_response`), I/O, and orchestration logic.
+    *   Added necessary inter-module imports.
+    *   **Debugging:** Initial testing revealed missing prompt files (`summarization.txt`, `dialogue_system.txt`) and premature dialogue termination.
+        *   Identified cause: Missing files, incorrect filename (`summarization_template.txt` vs `summarization.txt`), hardcoded system prompt in `dialogue.py`, inconsistent history truncation, incorrect `summarize_conversation` signature/call.
+        *   Requested user create/rename prompt files.
+        *   Fixed `handle_dialogue_turn` to use loaded template.
+        *   Fixed `utils.py` history truncation to use config constant.
+        *   Fixed `summarize_conversation` definition and call site in `dialogue.py`/`main.py`.
+    *   Generated `requirements.txt`.
+    *   Updated `docs/project_structure.md`.
+    *   Updated `
