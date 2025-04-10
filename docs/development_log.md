@@ -1,13 +1,34 @@
 # Endless Novel - Development Log
 
 **Project Root:** `/Users/luke/Desktop/Coding/endlessnovelgem`
-**Current Team Focus:** Designing and starting implementation of a dialogue system with character memory.
-**Suggested Next Steps:** Review the created `docs/dialogue_system_design_v1.md` document and then proceed with implementation step 1 (modifying `INITIAL_GAME_STATE` in `game_v0.py`).
-**Blockers:** None.
+**Current Team Focus:** Debugging and refining the State Manager-centric architecture.
+**Suggested Next Steps:** Address the `LocationManager` validation bug. Further refine State Manager prompt triggers (especially `start_dialogue` in Narrative mode) and context handling. Refine Dialogue prompt for outcome consistency.
+**Blockers:** `LocationManager` validation issue is preventing progress on location changes and character creation.
 
 --- Reference `docs/project_structure.md` for the current file layout. ---
 
 **Log Entries (Newest First):**
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for these actions)*
+*   **Goal:** Implement architectural refactor, moving state update determination from Gamemaster to a dedicated State Manager LLM.
+*   **Input Context:** Previous architecture where Gamemaster suggested state updates, leading to confusion and incorrect behaviour. User request to refactor based on a GM -> Content -> State Manager -> Apply Updates flow.
+*   **Discussion & Actions:**
+    *   **Gamemaster Refinement:** Modified `prompts/gamemaster_system.txt` and `gamemaster.py` to remove all responsibility for suggesting state updates. Role focused solely on assessment (`odds`) and outcome flavor text (`success_message`, `failure_message`). Enhanced prompt to demand better contrast between success/failure messages and strict adherence to inventory context.
+    *   **State Manager Integration:**
+        *   Imported `translate_interaction_to_state_updates` into `main.py`.
+        *   Loaded `prompts/state_manager_system.txt`.
+        *   Modified `main.py` loop to call `translate_interaction_to_state_updates` *after* content generation (narrative/dialogue), passing player input and LLM response text.
+        *   Modified `main.py` loop to pass the State Manager's generated updates (not the Gamemaster's) to `apply_state_updates`.
+    *   **Prompt Alignment & Debugging:**
+        *   Fixed `KeyError: 'player_utterance'` by removing the placeholder from `prompts/dialogue_system.txt`.
+        *   Corrected `start_dialogue` parameter name (`target_id` vs `character_id`) mismatch between `main.py::apply_state_updates` and `prompts/state_manager_system.txt`.
+        *   Removed unnecessary `stop_processing_flag` from successful `start_dialogue` in `main.py`.
+        *   Refined State Manager prompt (`prompts/state_manager_system.txt`) to improve outcome awareness (checking for failure in LLM response) and clarify parameter formatting (`update_relationship`).
+*   **Created Documentation:** Generated `architecture_overview.md` detailing the new flow and listing next steps.
+*   **Affected Files/State:** Modified `main.py`, `gamemaster.py`, `prompts/gamemaster_system.txt`, `prompts/state_manager_system.txt`, `prompts/dialogue_system.txt`. Created `architecture_overview.md`. Updated `docs/development_log.md` (this entry).
+*   **Decision:** Adopted the new State Manager-centric architecture.
+*   **Current Status:** Core loop follows the intended architecture. Gamemaster role is streamlined. State Manager is responsible for update determination. Several issues identified in testing remain.
+*   **Next:** Address outstanding issues, primarily the `LocationManager` bug and further State Manager prompt refinements.
 
 **2024-08-04 10:00 (Estimate):** *(Timestamp for this action)*
 *   **Goal:** Design a dialogue system with persistent character memory.
