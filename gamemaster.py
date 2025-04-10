@@ -107,9 +107,7 @@ def get_gamemaster_assessment(
                 if (isinstance(parsed_data, dict) and 
                     'odds' in parsed_data and 
                     'success_message' in parsed_data and 
-                    'failure_message' in parsed_data and 
-                    'suggested_state_updates' in parsed_data and 
-                    isinstance(parsed_data['suggested_state_updates'], list)):
+                    'failure_message' in parsed_data):
                     
                     assessment_data = parsed_data
                     print(f"[INFO] Gamemaster assessed odds: {parsed_data['odds']}")

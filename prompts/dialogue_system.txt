@@ -24,7 +24,4 @@ Your task is to engage in a natural, in-character conversation with the player b
 ## Conversation History:
 {dialogue_history}
 
-## Player's Last Utterance:
-{player_utterance}
-
 **Respond as {character_name} would speak:** 

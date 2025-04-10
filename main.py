@@ -21,6 +21,8 @@ from location_manager import LocationManager
 from gamemaster import get_gamemaster_assessment 
 # Use the Action Resolver module
 from action_resolver import resolve_action 
+# Use the State Manager module
+from state_manager import translate_interaction_to_state_updates
 
 # --- API Client Initialization --- #
 def initialize_clients() -> tuple[anthropic.Anthropic | None, genai.GenerativeModel | None, str | None, str | None]:
@@ -193,7 +195,7 @@ def apply_state_updates(update_requests: list, game_state: dict, character_manag
 
             elif request_name == "start_dialogue":
                 # ... (validation [char exists, present, not already in dialogue] and application) ...
-                char_id = params.get('character_id')
+                char_id = params.get('target_id') # Use target_id from Gamemaster schema
                 if not char_id: feedback_messages.append("(Who to talk to?)")
                 else:
                     is_present = location_manager.is_character_present(char_id, game_state.get('location'))
@@ -201,7 +203,7 @@ def apply_state_updates(update_requests: list, game_state: dict, character_manag
                     if char_exists and is_present:
                         if not game_state['dialogue_active']:
                             game_state['dialogue_active'] = True; game_state['dialogue_partner'] = char_id
-                            name = character_manager.get_name(char_id); feedback_messages.append(f"(Conversation started with {name}.)"); stop_processing_flag = True
+                            name = character_manager.get_name(char_id); feedback_messages.append(f"(Conversation started with {name}.)")
                         else: name = character_manager.get_name(game_state['dialogue_partner']); feedback_messages.append(f"(Already talking to {name}.)"); stop_processing_flag = True
                     elif char_exists: feedback_messages.append(f"({character_manager.get_name(char_id)} is not here.)"); stop_processing_flag = True
                     else: feedback_messages.append(f"(Unknown character: {char_id})" ); stop_processing_flag = True
@@ -327,14 +329,14 @@ def get_player_input() -> str:
 
 # --- Main Game Loop --- #
 def main():
-    """Runs the main game loop using the GM Assessor + Action Resolver architecture."""
+    """Runs the main game loop using the GM Assessor + Action Resolver + State Manager architecture."""
     claude_client, gemini_client, claude_model_name, gemini_model_name = initialize_clients()
 
     # Load prompt templates
     prompt_templates = {}
     required_prompts = ["claude_system", "claude_turn_template",
                         "gemini_placeholder_template", "dialogue_system",
-                        "summarization", "gamemaster_system"] # Use gamemaster prompt
+                        "summarization", "gamemaster_system", "state_manager_system"] # Added state_manager_system
     for name in required_prompts:
         template_content = load_prompt_template(f"{name}.txt")
         prompt_templates[name] = template_content
@@ -380,7 +382,7 @@ def main():
         placeholder_output = None
         stop_processing_flag = False 
         feedback_messages = []
-        suggested_state_updates = []
+        state_manager_updates = [] # Initialize list for updates from State Manager
         action_succeeded = True # Default to success unless a roll fails
 
         # --- Gamemaster Assessment Call ---
@@ -408,7 +410,6 @@ def main():
         odds_str = gm_assessment.get("odds", "Medium") # Default odds if missing
         success_msg = gm_assessment.get("success_message", "(Action succeeds.)")
         failure_msg = gm_assessment.get("failure_message", "(Action fails.)")
-        suggested_state_updates = gm_assessment.get("suggested_state_updates", [])
 
         if odds_str == "Impossible":
             action_succeeded = False
@@ -478,27 +479,52 @@ def main():
             traceback.print_exc()
             content_llm_response_text = "(The narrative falters...)"
             feedback_messages.append(f"[SYS ERR: Content LLM call failed: {content_call_e}]")
-            suggested_state_updates = [] # Ensure state updates are skipped
+            # Skip state manager and updates if content gen fails
+            stop_processing_flag = True 
 
-        # --- Apply State Updates (Suggested by GM, validated here) ---
-        if suggested_state_updates:
+        # --- State Manager LLM Call ---
+        if not stop_processing_flag: # Only run if content generation didn't fail
             try:
-                stop_processing_flag, tool_feedback = apply_state_updates(
-                     suggested_state_updates, game_state, character_manager, location_manager,
+                state_manager_updates = translate_interaction_to_state_updates(
+                    user_input=player_input_raw,
+                    llm_response_text=content_llm_response_text,
+                    game_state=game_state,
+                    character_manager=character_manager,
+                    claude_client=claude_client,
+                    claude_model_name=claude_model_name,
+                    state_manager_template=prompt_templates.get("state_manager_system")
+                )
+            except Exception as sm_call_e:
+                print(f"[ERROR] Exception during State Manager call: {sm_call_e}")
+                traceback.print_exc()
+                feedback_messages.append(f"[SYS ERR: State Manager call failed: {sm_call_e}]")
+                # Ensure updates aren't applied if SM fails
+                state_manager_updates = []
+                stop_processing_flag = True
+
+        # --- Apply State Updates (From State Manager) ---
+        if state_manager_updates: # Check if State Manager provided updates
+            try:
+                # Pass state_manager_updates instead of suggested_state_updates
+                stop_processing_flag_from_apply, tool_feedback = apply_state_updates(
+                     state_manager_updates, game_state, character_manager, location_manager,
                      prompt_templates, gemini_client, gemini_model_name, 
                      action_succeeded # Pass success flag
                 )
                 feedback_messages.extend(tool_feedback)
+                # Allow apply_state_updates to set the stop flag (e.g., for dialogue start/end)
+                if stop_processing_flag_from_apply: 
+                    stop_processing_flag = True 
             except Exception as update_exec_e:
                 print(f"[ERROR] Exception applying state updates: {update_exec_e}")
                 traceback.print_exc()
                 feedback_messages.append(f"[SYS ERR: State update application failed: {update_exec_e}]")
                 stop_processing_flag = True 
         else:
-            print("[INFO] Gamemaster suggested no state updates needed.")
-            # stop_processing_flag should be False unless set by GM impossibility/error
-            if not any("[SYS ERR" in msg for msg in feedback_messages) and odds_str != "Impossible":
-                 stop_processing_flag = False
+            # Updated print statement
+            if not stop_processing_flag: # Don't print if an earlier error occurred
+                 print("[INFO] State Manager suggested no state updates needed.")
+            # stop_processing_flag handling remains similar, depends on previous steps or update application
 
         # --- Update History ---
         # Player input for dialogue is added within handle_dialogue_turn's prompt prep
