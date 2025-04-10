@@ -2,7 +2,11 @@
 import json
 import anthropic
 from utils import call_claude_api
-from config import update_game_state_tool, start_dialogue_tool, end_dialogue_tool # Import tools
+from config import (
+    update_game_state_tool, start_dialogue_tool, end_dialogue_tool, 
+    create_character_tool, DEBUG_IGNORE_LOCATION # Import debug flag
+)
+from character_manager import CharacterManager # Import CharacterManager for type hinting
 
 # --- Game State Update Logic --- #
 def apply_tool_updates(tool_input: dict, game_state: dict) -> tuple[bool, list]:
@@ -21,16 +25,19 @@ def apply_tool_updates(tool_input: dict, game_state: dict) -> tuple[bool, list]:
     updates_applied = False
     state_changed_summary = []
 
-    # Location
+    # Location Update (Conditional)
     if "location" in tool_input:
-        old_loc = game_state.get('location', 'None')
-        new_loc = tool_input['location']
-        if old_loc != new_loc:
-            game_state['location'] = new_loc
-            change_str = f"Location: {old_loc} -> {new_loc}"
-            print(f"  [State Update] {change_str}")
-            state_changed_summary.append(change_str)
-            updates_applied = True
+        if DEBUG_IGNORE_LOCATION:
+             print(f"  [DEBUG] Ignoring location update ({tool_input['location']}) due to DEBUG_IGNORE_LOCATION flag.")
+        else:
+            old_loc = game_state.get('location', 'None')
+            new_loc = tool_input['location']
+            if old_loc != new_loc:
+                game_state['location'] = new_loc
+                change_str = f"Location: {old_loc} -> {new_loc}"
+                print(f"  [State Update] {change_str}")
+                state_changed_summary.append(change_str)
+                updates_applied = True
 
     # Time of Day
     if "time_of_day" in tool_input:
@@ -103,41 +110,6 @@ def apply_tool_updates(tool_input: dict, game_state: dict) -> tuple[bool, list]:
                     deleted.append(flag_key)
             if deleted:
                 change_str = f"Narrative Flags Delete: {deleted}"
-                print(f"  [State Update] {change_str}")
-                state_changed_summary.append(change_str)
-                updates_applied = True
-
-    # Current NPCs Add
-    if "current_npcs_add" in tool_input:
-        npcs_to_add = tool_input.get("current_npcs_add", [])
-        added = []
-        current_npcs = game_state.setdefault('current_npcs', [])
-        if isinstance(npcs_to_add, list):
-            for npc in npcs_to_add:
-                if npc not in current_npcs:
-                    current_npcs.append(npc)
-                    added.append(npc)
-            if added:
-                change_str = f"NPCs Add: {added}"
-                print(f"  [State Update] {change_str}")
-                state_changed_summary.append(change_str)
-                updates_applied = True
-
-    # Current NPCs Remove
-    if "current_npcs_remove" in tool_input:
-        npcs_to_remove = tool_input.get("current_npcs_remove", [])
-        removed = []
-        current_npcs = game_state.setdefault('current_npcs', [])
-        if isinstance(npcs_to_remove, list):
-             current_npcs_list = list(current_npcs)
-             for npc in npcs_to_remove:
-                 if npc in current_npcs_list:
-                    try:
-                         current_npcs.remove(npc)
-                         removed.append(npc)
-                    except ValueError: pass
-             if removed:
-                change_str = f"NPCs Remove: {removed}"
                 print(f"  [State Update] {change_str}")
                 state_changed_summary.append(change_str)
                 updates_applied = True
@@ -220,13 +192,20 @@ def apply_tool_updates(tool_input: dict, game_state: dict) -> tuple[bool, list]:
 
 # --- Prompt Construction --- #
 def construct_claude_prompt(current_state: dict,
+<<<<<<< HEAD
                           conversation_history: list,
                           prompt_templates: dict) -> dict:
+=======
+                              conversation_history: list,
+                              character_manager: CharacterManager, # Added manager
+                              prompt_templates: dict) -> dict:
+>>>>>>> dialogue-system
     """Constructs the Claude prompt components for a narrative turn.
 
     Args:
         current_state: The current game state dictionary.
         conversation_history: List of previous message dicts.
+        character_manager: The CharacterManager instance.
         prompt_templates: Dictionary containing loaded prompt template strings.
 
     Returns a dictionary containing system prompt, user turn prompt,
@@ -237,22 +216,36 @@ def construct_claude_prompt(current_state: dict,
 
     if "Error:" in system_prompt or "Error:" in turn_template:
         print("[ERROR] Cannot construct Claude prompt due to missing templates.")
-        # Return a minimal structure or raise an error
         return {"system_prompt": "", "user_prompt": "Error in prompt construction.", "history": conversation_history}
 
-    # Prepare context dictionary
-    present_companions = {comp_id: comp for comp_id, comp in current_state.get('companions', {}).items() if comp.get('present')}
-    companion_names_present = ', '.join([comp['name'] for comp_id, comp in present_companions.items()]) or "None"
-    companion_ids_present = ', '.join(present_companions.keys()) or "None"
+    # Determine present characters (conditional location check)
+    player_location = current_state.get('location')
+    all_character_ids = character_manager.get_all_character_ids()
+    
+    if DEBUG_IGNORE_LOCATION:
+        print("  [DEBUG] Ignoring location for character presence due to DEBUG_IGNORE_LOCATION flag.")
+        present_character_ids = all_character_ids # Assume all are present
+    else:
+        present_character_ids = [
+            char_id for char_id in all_character_ids 
+            if character_manager.get_location(char_id) == player_location
+        ]
+        
+    present_character_names = [character_manager.get_name(cid) or cid for cid in present_character_ids]
+
+    # Differentiate between companions and other NPCs if needed (using archetype)
+    # For now, just list all present characters
+    companion_names_present = ", ".join(present_character_names) or "None"
+    companion_ids_present = ", ".join(present_character_ids) or "None"
     
     # Extract universe settings
     universe_settings = current_state.get('settings', {}).get('universe', {})
     background_settings = current_state.get('settings', {}).get('background', {})
     
     context = {
-        'player_location': current_state.get('location', 'an unknown place'),
-        'characters_present': ', '.join(current_state.get('current_npcs', []) or ["None"]),
-        'companions_present': companion_names_present,
+        'player_location': player_location or 'an unknown place',
+        'characters_present': companion_names_present, # Using combined list for now
+        'companions_present': companion_names_present, # Keep both for template compatibility?
         'companion_ids_present': companion_ids_present,
         'time_of_day': current_state.get('time_of_day', 'unknown'),
         'key_information': '; '.join([f"{k}: {v}" for k, v in current_state.get('narrative_flags', {}).items()] or ["None"]),
@@ -300,6 +293,7 @@ def construct_claude_prompt(current_state: dict,
 def handle_narrative_turn(
     game_state: dict,
     conversation_history: list,
+    character_manager: CharacterManager, # Added manager
     claude_client: anthropic.Anthropic | None,
     claude_model_name: str | None,
     prompt_templates: dict,
@@ -309,6 +303,7 @@ def handle_narrative_turn(
     Args:
         game_state: The current game state.
         conversation_history: The current narrative history.
+        character_manager: The CharacterManager instance.
         claude_client: Initialized Anthropic client.
         claude_model_name: Name of the Claude model.
         prompt_templates: Dictionary of loaded prompt templates.
@@ -321,10 +316,20 @@ def handle_narrative_turn(
     print("\n>>> Processing Player Action... Asking Claude for narrative... <<<")
     
     # Construct prompt using the function in this module
-    prompt_details = construct_claude_prompt(game_state, conversation_history, prompt_templates)
+    prompt_details = construct_claude_prompt(
+        game_state, 
+        conversation_history, 
+        character_manager, # Pass manager
+        prompt_templates
+    )
 
-    # Define available tools for narrative turns
-    available_tools = [update_game_state_tool, start_dialogue_tool, end_dialogue_tool]
+    # Define available tools for narrative turns (including the new one)
+    available_tools = [
+        update_game_state_tool, 
+        start_dialogue_tool, 
+        end_dialogue_tool,
+        create_character_tool # Added
+    ]
     
     # Call Claude API using the utility function
     response_obj = call_claude_api(

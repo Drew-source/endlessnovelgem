@@ -6,11 +6,14 @@ MAX_TURNS = 50 # Limit game length for testing
 PROMPT_DIR = "prompts" # Ensure this is defined
 MAX_HISTORY_MESSAGES = 20 # Max messages to keep in narrative history
 
+# --- Debugging Flags ---
+DEBUG_IGNORE_LOCATION = True # If True, bypasses location checks for presence and prevents location updates.
+
 # --- Tool Definition for Claude ---
 # This defines the structure Claude should use to request state changes.
 update_game_state_tool = {
     "name": "update_game_state",
-    "description": "Updates the explicit game state based on narrative events (location, inventory, character relationships, flags, objectives). Use ONLY for these narrative-driven changes. DO NOT use this to start or end dialogue; use the dedicated dialogue tools for that.",
+    "description": "Updates the explicit game state based on narrative events (e.g., player location, player inventory, companion state, flags, objectives). Use ONLY for these specific state changes. DO NOT use this to introduce new characters (use create_character), or to start/end dialogue.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -20,20 +23,17 @@ update_game_state_tool = {
             "player_inventory_remove": {"type": "array", "items": {"type": "string"}, "description": "List of item names to remove from player inventory."},
             "narrative_flags_set": {"type": "object", "description": "Dictionary of narrative flags to set or update (key: value). Example: {'quest_started': true, 'door_unlocked': false}"},
             "narrative_flags_delete": {"type": "array", "items": {"type": "string"}, "description": "List of narrative flag keys to delete."},
-            "current_npcs_add": {"type": "array", "items": {"type": "string"}, "description": "List of non-companion NPC IDs/names now present in the location."},
-            "current_npcs_remove": {"type": "array", "items": {"type": "string"}, "description": "List of non-companion NPC IDs/names no longer present in the location."},
             "companion_updates": {
                 "type": "object",
-                "description": "Updates for specific companions, keyed by companion ID (e.g., 'varnas_the_skeptic').",
-                "additionalProperties": { # Allows updates for any companion ID
+                "description": "Updates for specific COMPANIONS/CHARACTERS managed by CharacterManager, keyed by character ID (e.g., 'varnas_the_skeptic'). Use this for changes like inventory or relationships FOR EXISTING characters.",
+                "additionalProperties": { # Allows updates for any character ID
                     "type": "object",
                     "properties": {
-                         "present": {"type": "boolean", "description": "Set companion presence status in the current location."},
                          "inventory_add": {"type": "array", "items": {"type": "string"}},
                          "inventory_remove": {"type": "array", "items": {"type": "string"}},
-                         "relation_to_player_score": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Update relationship score (0=hate, 1=love)."},
-                         "relation_to_player_summary": {"type": "string", "description": "Update brief summary of relationship."}, # Allow direct update? Or generate?
-                         "relations_to_others_set": {"type": "object", "description": "Dict of other companion/NPC IDs to relationship scores (0-1)."}
+                         "relation_to_player_score": {"type": "number", "description": "DEPRECATED - Use update_relationship tool for trust changes during dialogue."}, # Mark as deprecated? or remove?
+                         "relation_to_player_summary": {"type": "string", "description": "DEPRECATED - Relationship summaries evolve naturally through dialogue and trust changes."}, 
+                         "relations_to_others_set": {"type": "object", "description": "(Future Use) Dict of other character IDs to relationship scores."}
                     },
                     "additionalProperties": False # Prevent unexpected fields per companion
                 }
@@ -68,5 +68,85 @@ end_dialogue_tool = {
         "type": "object",
         "properties": {},
          # No parameters needed, it always ends the *current* dialogue.
+    }
+}
+
+# --- Character Creation Tool --- #
+create_character_tool = {
+    "name": "create_character",
+    "description": "Generates and adds a new character to the game world based on a requested archetype and location. Use this when the narrative calls for a new NPC to appear.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "archetype": {
+                "type": "string",
+                "description": "The type of character to create.",
+                "enum": ["townsperson", "companion", "foe", "love_interest"] # Allowed archetypes
+            },
+            "location": {
+                "type": "string",
+                "description": "The location ID/name where the character should be created. If omitted, might default to player location based on context."
+            },
+            "name_hint": {
+                "type": "string",
+                "description": "An optional hint for the character's name (e.g., a specific name suggested by narrative)."
+            }
+            # Consider adding 'context_summary' later if generation needs more narrative input
+        },
+        "required": ["archetype"]
+        # Location is technically required by the manager, but let the LLM 
+        # potentially infer it or make it optional here and handle default in Python?
+        # Making it not required here for flexibility, will handle default in Python if needed.
+    }
+}
+
+# --- Dialogue Enhancement Tools --- #
+
+exchange_item_tool = {
+    "name": "exchange_item",
+    "description": "Transfers an item between the player and the current dialogue partner. ONLY use this tool AFTER conversational agreement from BOTH parties has been reached. Specify the item, quantity (default 1), giver, and receiver.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "item_name": {
+                "type": "string",
+                "description": "The exact name of the item being transferred."
+            },
+            "quantity": {
+                "type": "integer",
+                "description": "The number of items to transfer.",
+                "default": 1
+            },
+            "giver_id": {
+                "type": "string",
+                "description": "The ID of the character giving the item ('player' or the character_id of the dialogue partner)."
+            },
+            "receiver_id": {
+                "type": "string",
+                "description": "The ID of the character receiving the item ('player' or the character_id of the dialogue partner)."
+            }
+        },
+        "required": ["item_name", "giver_id", "receiver_id"]
+    }
+}
+
+update_relationship_tool = {
+    "name": "update_relationship",
+    "description": "Updates the relationship traits (like trust or temporary statuses like anger) between the player and the current dialogue partner based on significant conversational interactions (e.g., major agreements, betrayals, insults, heartfelt apologies). Use sparingly for impactful moments.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            # No companion_id needed, assumed to be current dialogue partner
+            "trait": {
+                "type": "string",
+                "description": "The relationship trait or status to update.",
+                "enum": ["trust", "anger"] # Expand later if needed
+            },
+            "change": {
+                "type": ["integer", "object"],
+                "description": "The change to apply. For 'trust', provide an integer (e.g., +1 for minor positive, -10 for major negative). For statuses like 'anger', provide an object like {'action': 'set', 'duration': 5} or {'action': 'remove'}."
+            }
+        },
+        "required": ["trait", "change"]
     }
 }

@@ -169,6 +169,79 @@
 *   **Decision:** Proceed with simple truncation for V0 history management; document need for future enhancements.
 *   **Next:** Test history implementation. Refine prompts or add other features.
 
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Implement and debug enhanced dialogue tools (item exchange, relationship updates).
+*   **Input Context:** Successful test of character generation and basic dialogue initiation. Decision to proceed with adding dialogue interaction tools.
+*   **Discussion & Actions:**
+    *   **Defined Tools:** Added `exchange_item_tool` and `update_relationship_tool` schemas to `config.py`.
+    *   **Enabled Tools in Dialogue:** Modified `dialogue.py::handle_dialogue_turn` to include the new tools in the list passed to the LLM API call.
+    *   **Updated Dialogue Prompt:** Significantly revised `prompts/dialogue_system.txt` to:
+        *   Include placeholders for character context (inventory, trust score, statuses).
+        *   Provide detailed descriptions and usage guidelines for all three dialogue tools (`end_dialogue`, `exchange_item`, `update_relationship`).
+        *   Instruct the LLM on how character state should influence behavior and tool use.
+    *   **Added Context Fetching:** Modified `dialogue.py::handle_dialogue_turn` to fetch inventory, trust, and status data using `CharacterManager` and format it for the prompt placeholders.
+    *   **Implemented Tool Handling:** Added `elif` branches in `main.py::handle_claude_response` to process calls to `exchange_item_tool` and `update_relationship_tool`, extracting parameters and calling the relevant (initially placeholder) `CharacterManager` methods.
+    *   **Implemented Character Manager Methods:** Implemented the core logic for inventory (`add_item`, `remove_item`, `has_item`) and relationship methods (`update_trust`, `set_status`, `remove_status`, `decrement_statuses`) in `character_manager.py`.
+    *   **Implemented Item Exchange Logic:** Added logic in `main.py::handle_claude_response` for `exchange_item_tool` to handle transfers involving both player inventory and `CharacterManager` methods, including checks and basic rollback attempt.
+    *   **Debugging Dialogue Errors:** 
+        *   Fixed `IndexError` in `dialogue.py::handle_dialogue_turn` caused by redundant prompt formatting after context insertion.
+        *   Escaped `{}` -> `{{}}` in prompt examples (`prompts/dialogue_system.txt`) to prevent formatting errors.
+        *   Fixed `KeyError: 'content'` in `dialogue.py::handle_dialogue_turn` by correctly accessing `"utterance"` when building API message history.
+        *   Fixed `NameError` in `main.py::handle_claude_response` by adding missing imports for `exchange_item_tool` and `update_relationship_tool` from `config.py`.
+*   **Affected Files/State:** Modified `config.py`, `dialogue.py`, `main.py`, `character_manager.py`, `prompts/dialogue_system.txt`, `docs/development_log.md` (this entry).
+*   **Decision:** Proceeded with implementing and debugging the core logic for dialogue-driven item exchange and relationship updates.
+*   **Current Status:** Dialogue system includes tools for ending conversation, exchanging items, and updating relationships. Core logic for processing these tools and updating state via `CharacterManager` is implemented. Dialogue prompts provide context (inventory, trust, status) and tool usage instructions. Basic functionality appears stable after debugging.
+*   **Next:** Thorough testing of the new dialogue tools (item exchange variations, trust changes, status effects). Further prompt refinement based on testing.
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Debug character generation and dialogue initiation, confirm tool usage.
+*   **Input Context:** Previous tests showed Claude failing to use `create_character` tool appropriately and dialogue failing due to `NameError` and incorrect character ID usage.
+*   **Discussion & Actions:**
+    *   **Fixed `NameError`:** Added missing import for `DEBUG_IGNORE_LOCATION` in `main.py`.
+    *   **Refined Prompt Instructions:** Further strengthened instructions in `prompts/claude_system.txt` to more clearly guide Claude on when to use `create_character` (especially for player-initiated summons) versus `update_game_state`.
+    *   **Removed Old NPC Handling:** Removed `current_npcs_add/remove` fields from `update_game_state_tool` schema (`config.py`) and the corresponding handling code from `narrative.py::apply_tool_updates` to prevent confusion and enforce usage of `CharacterManager`.
+    *   **Testing:** Successfully tested the character generation flow. Player action intended to summon a character correctly triggered Claude to use the `create_character_tool`. Subsequent attempt to initiate dialogue with the newly generated character using their name correctly triggered Claude to use the `start_dialogue` tool with the *exact* `character_id` provided by the `CharacterManager`.
+*   **Affected Files/State:** Modified `config.py`, `narrative.py`, `main.py`, `prompts/claude_system.txt`, `docs/development_log.md` (this entry).
+*   **Decision:** Confirmed character generation and dialogue initiation tools are functioning correctly with the `CharacterManager` and refined prompts.
+*   **Future Work / Note:** The `DEBUG_IGNORE_LOCATION` flag is a temporary measure. A more robust location management system will be needed in the future to handle character presence based on actual game world locations, at which point this flag should be set to `False` or removed.
+*   **Current Status:** Core character management (creation, storage, basic retrieval) and dynamic generation via LLM tool calls are functional. Dialogue can be initiated with generated characters. Location checks are temporarily bypassed for testing.
+*   **Next:** Proceed with implementing the enhanced dialogue mechanics (item exchange, relationship updates) using the `CharacterManager`'s placeholder methods.
+
+**[Date - Placeholder] - Character Manager V1 Implementation**
+
+**Context:** Decision to implement a CharacterManager module for better organization and scalability before adding enhanced dialogue features.
+
+**Actions & Decisions:**
+
+*   Created `character_manager.py` with `CharacterManager` class.
+*   Defined `ARCHETYPE_CONFIG` with initial data for 'townsperson', 'companion', 'foe', 'love_interest'.
+*   Implemented `create_character` method for direct character addition.
+*   Implemented `generate_character` method with randomization logic based on archetype config.
+*   Defined `create_character_tool` schema in `config.py`.
+*   Refactored `main.py`:
+    *   Updated `INITIAL_GAME_STATE` structure for Varnas (archetype, relationships, etc.).
+    *   Instantiated `CharacterManager`.
+    *   Added handling for `create_character_tool` in `handle_claude_response`, calling the manager.
+    *   Passed manager instance to relevant functions.
+*   Refactored `narrative.py`:
+    *   Updated `construct_claude_prompt` to use manager for presence checks.
+    *   Added `create_character_tool` to available narrative tools.
+*   Refactored `dialogue.py`:
+    *   Updated `handle_dialogue_turn` to accept and use manager for fetching partner data.
+*   Created `docs/character_manager_summary.md` to document the new module.
+
+**Current Status:**
+
+*   CharacterManager module created with generation logic.
+*   Tool for dynamic character creation implemented and integrated.
+*   Core game loop refactored to use the manager.
+
+**Next Steps:**
+
+*   Test character generation via the `create_character_tool`.
+*   Implement remaining core CharacterManager methods (inventory, relationship modifiers).
+*   Proceed with implementing enhanced dialogue mechanics (item exchange, relationship updates).
+
 **2024-08-04 [Time - Placeholder]:** *(Timestamp for this action)*
 *   **Goal:** Refactor monolithic `game_v0.py` into logical modules and verify functionality.
 *   **Input Context:** Previous state with functional dialogue system in `game_v0.py`. User request to modularize.
@@ -191,46 +264,4 @@
         *   Fixed `summarize_conversation` definition and call site in `dialogue.py`/`main.py`.
     *   Generated `requirements.txt`.
     *   Updated `docs/project_structure.md`.
-    *   Updated `docs/development_log.md` (this entry).
-*   **Affected Files/State:** Created `config.py`, `utils.py`, `visuals.py`, `dialogue.py`, `narrative.py`, `main.py`, `requirements.txt`. Modified all these and `docs/project_structure.md`, `docs/development_log.md`. Renamed `game_v0.py` to `game_v0_backup.py`. Assumed user created `prompts/dialogue_system.txt` and renamed `prompts/summarization_template.txt` to `prompts/summarization.txt`.
-*   **Decision:** Adopted the modular structure. Code refactoring and initial debugging complete.
-*   **Next:** Thorough testing of `main.py`. Plan next features.
-
-**2024-08-04 [Time - Placeholder]:** *(Timestamp for this action)*
-*   **Goal:** Document the final architecture of the dialogue engine after recent fixes.
-*   **Input Context:** Working dialogue system in `game_v0.py` following bug fixes related to dialogue exit and history consistency.
-*   **Discussion:** Generated a markdown summary (`dialogue_engine_summary.md`) detailing the architecture, components (state, tools, functions), workflow examples (entry, during, exit), design rationale, and status.
-*   **Affected Files/State:** Created `docs/dialogue_engine_summary.md`. Updated `docs/project_structure.md`.
-*   **Decision:** Add dedicated summary document for the dialogue engine.
-*   **Next:** Proceed with planned refactoring of `game_v0.py`.
-
-**[Date - Placeholder] - Dialogue Exit & History Fixes Complete**
-
-**Context:** Following the reset to a stable state where dialogue entry worked, the focus was on enabling dialogue exit and fixing the history inconsistency that caused errors when returning to narrative mode after tool use.
-
-**Actions & Decisions:**
-
-*   **Dialogue Exit Enablement:**
-    *   Modified `handle_dialogue_turn` to pass `tools=[end_dialogue_tool]` to `call_claude_api`, allowing the LLM to trigger conversation endings.
-    *   Changed `handle_dialogue_turn` to return the raw `response_obj` instead of processed text.
-    *   Updated the `main` loop's dialogue branch to call `handle_claude_response` to process the raw response, enabling tool detection.
-    *   Refined the dialogue branch logic to update the character's specific dialogue history *only* if the `end_dialogue` tool was not used (checked via `stop_processing_flag`).
-*   **History Correction (Tool Use Sequence):**
-    *   Modified `handle_claude_response` to return a more detailed 5-tuple: `(processed_text, initial_response_obj, tool_results_content_sent, final_response_obj_after_tool, stop_processing_flag)`.
-    *   Updated both dialogue and narrative branches in `main` to unpack these 5 values.
-    *   **Critically redesigned the history update logic in the *narrative* branch:** Ensured that after an assistant message containing `tool_use` (for *any* tool like `start_dialogue`, `end_dialogue`, or `update_game_state`), a user-role message containing the corresponding `tool_result` block(s) is immediately appended to the main `conversation_history`. This resolved the API error related to mismatched tool use/result sequences.
-    *   Ensured the narrative branch uses the `stop_processing_flag` to correctly skip Gemini calls during dialogue transitions.
-*   **Testing:** Confirmed successful execution of the full narrative -> dialogue entry -> exchange -> dialogue exit -> narrative continuation cycle. Verified that character memory (dialogue history) persists correctly between separate conversations.
-
-**Current Status:**
-
-*   The core narrative and dialogue engines are functioning correctly.
-*   Transitions between narrative and dialogue modes (both entry and exit) are working reliably via tool use.
-*   Character-specific dialogue history persists and influences conversation.
-*   The main conversation history correctly handles the sequence of tool use and results, preventing API errors.
-*   **The primary goals for the dialogue system (V1 as per design doc) are now met.**
-
-**Next Steps:**
-*   Further testing and refinement of prompts (especially dialogue prompts for naturalness and reliable tool use).
-*   Consider potential edge cases or minor improvements.
-*   Plan next major feature development (e.g., more complex state interactions, richer world). 
+    *   Updated `
