@@ -6,13 +6,16 @@ from utils import call_claude_api
 from character_manager import CharacterManager # Import CharacterManager for type hinting
 from location_manager import LocationManager # Import LocationManager
 
+# Define directions for context keys
+DIRECTIONS = ["north", "east", "south", "west"]
+
 # --- Game State Update Logic --- #
 # REMOVED apply_tool_updates function - This logic moves to main.py, triggered by Gamemaster
 
 # --- Prompt Construction --- #
 def construct_claude_prompt(
     current_state: dict,
-    conversation_history: list,
+                              conversation_history: list,
     character_manager: CharacterManager,
     location_manager: LocationManager, # Add location_manager
     prompt_templates: dict
@@ -39,7 +42,7 @@ def construct_claude_prompt(
 
     # Determine present characters using LocationManager
     player_location = current_state.get('location')
-    present_character_ids = location_manager.get_characters_at_location(player_location)
+    present_character_ids = location_manager.get_characters_at_location(player_location) if player_location else [] # Handle None location
     present_character_names = [character_manager.get_name(cid) or cid for cid in present_character_ids]
 
     # Differentiate between companions and other NPCs if needed (using archetype)
@@ -50,7 +53,19 @@ def construct_claude_prompt(
     # Key info formatting - simplified for clarity
     key_info_str = "; ".join([f"{k}: {v}" for k, v in current_state.get('narrative_flags', {}).items()])
     if not key_info_str: key_info_str = "None"
-
+    
+    # --- Get Adjacent Location Descriptions --- #
+    adjacent_context = {}
+    if player_location:
+        connections = location_manager.get_connections(player_location)
+        for direction in DIRECTIONS:
+            adj_id = connections.get(direction)
+            adj_desc = location_manager.get_location_description(adj_id) if adj_id else None
+            adjacent_context[f'adjacent_{direction}_desc'] = adj_desc if adj_desc else "an indistinct path or obstacle"
+    else: # Handle case where player location is None
+        for direction in DIRECTIONS:
+            adjacent_context[f'adjacent_{direction}_desc'] = "the void"
+            
     context = {
         'player_location': player_location or 'an unknown place',
         'characters_present': companion_names_present, # Using combined list for now
@@ -62,6 +77,8 @@ def construct_claude_prompt(
         'current_objective': current_state.get('current_objective', 'None stated.'),
         'last_player_action': current_state.get('last_player_action', 'None')
     }
+    # Add adjacent descriptions to context
+    context.update(adjacent_context)
 
     try:
         user_turn_prompt_text = turn_template.format(**context)

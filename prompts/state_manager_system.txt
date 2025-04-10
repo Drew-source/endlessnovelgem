@@ -78,9 +78,13 @@ This information is provided for context but YOU DO NOT use it for validation du
 *   `dialogue_partner_id`: {character_id | 'None'}
 *   `dialogue_partner_state`: {{ 'name': ..., 'inventory': [...], 'trust': ..., 'statuses': {...}, 'following': true/false }} - Only relevant if `game_mode` is 'dialogue'.
 *   `present_characters`: {list_of_character_ids_at_location}
+*   `adjacent_locations`: {{ "north": "id_n", "east": "id_e", ... }} - IDs of locations adjacent to `current_location`. May be empty if not generated yet.
 
 ## State Update Request Schemas Overview (Possible values for "request_name"):
 *   `update_game_state`: Params: `location`, `time_of_day`, `player_inventory_add`, `player_inventory_remove`, `narrative_flags_set`, `narrative_flags_delete`, `current_objective`
+    *   **Note on `location` parameter:** If the successful action was movement (e.g., `user_input` was 'go north' or similar), determine the destination `location` ID by looking up the direction in the `adjacent_locations` map provided in the context.
+    *   **CRITICAL `narrative_flags_set` format:** The value for `narrative_flags_set` MUST be a JSON object (dictionary) where keys are flag names (strings) and values are their new state (e.g., `true`, numbers, or strings). Example: `"narrative_flags_set": { "met_wizard": true, "quest_stage": 2 }`
+    *   **CRITICAL `narrative_flags_delete` format:** The value for `narrative_flags_delete` MUST be a JSON array (list) of flag name strings to remove. Example: `"narrative_flags_delete": ["initial_warning_given"]`
 *   `start_dialogue`: Params: `target_id`
 *   `create_character`: Params: `archetype`, `location` (optional), `name_hint` (optional)
 *   `end_dialogue`: Params: `{}`

@@ -3,16 +3,21 @@ import json
 import anthropic
 from utils import load_prompt_template, call_claude_api
 from character_manager import CharacterManager # For type hints
+from location_manager import LocationManager # IMPORT LocationManager
 
 # --- State Manager Input Construction --- #
-def construct_state_manager_context(game_state: dict, character_manager: CharacterManager) -> dict:
+def construct_state_manager_context(game_state: dict, character_manager: CharacterManager, location_manager: LocationManager) -> dict:
     """Constructs the game state context dictionary for the State Manager prompt."""
     context = {}
     context['game_mode'] = 'dialogue' if game_state.get('dialogue_active') else 'narrative'
-    context['current_location'] = game_state.get('location', 'unknown')
+    current_location_id = game_state.get('location', 'unknown')
+    context['current_location'] = current_location_id
     context['time_of_day'] = game_state.get('time_of_day', 'unknown')
     context['player_inventory'] = game_state.get('player', {}).get('inventory', [])
     context['present_characters'] = game_state.get('current_npcs', []) # Assuming current_npcs holds IDs present
+    
+    # Add adjacent location data
+    context['adjacent_locations'] = location_manager.get_connections(current_location_id)
     
     partner_id = game_state.get('dialogue_partner')
     context['dialogue_partner_id'] = partner_id
@@ -39,6 +44,7 @@ def translate_interaction_to_state_updates(
     llm_response_text: str,
     game_state: dict,
     character_manager: CharacterManager,
+    location_manager: LocationManager,
     claude_client: anthropic.Anthropic | None,
     claude_model_name: str | None,
     state_manager_template: str
@@ -50,6 +56,7 @@ def translate_interaction_to_state_updates(
         llm_response_text: The narrative/dialogue LLM's text response.
         game_state: The current game state.
         character_manager: The CharacterManager instance.
+        location_manager: The LocationManager instance.
         claude_client: Initialized Anthropic client.
         claude_model_name: Name of the Claude model to use for State Manager.
         state_manager_template: The loaded State Manager system prompt template.
@@ -67,7 +74,7 @@ def translate_interaction_to_state_updates(
     print("\n>>> Asking State Manager LLM to translate interaction... <<<")
 
     # 1. Construct the Game State Context for the prompt
-    game_state_context = construct_state_manager_context(game_state, character_manager)
+    game_state_context = construct_state_manager_context(game_state, character_manager, location_manager)
 
     # 2. Construct the input JSON string for the State Manager prompt
     input_data_for_prompt = {

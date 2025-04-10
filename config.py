@@ -8,7 +8,8 @@ MAX_HISTORY_MESSAGES = 20 # Max messages to keep in narrative history
 INITIAL_TRUST = 20 # Default trust level for new relationships
 
 # --- Debugging Flags ---
-DEBUG_IGNORE_LOCATION = False # Set to False for normal operation
+DEBUG_MODE = False # Set to True to print detailed state info each turn
+DEBUG_IGNORE_LOCATION = False # Set to True to allow interaction with NPCs not present
 
 # --- Tool Definitions Removed --- #
 # The following tool definitions are obsolete in the GM Assessor architecture

@@ -3,13 +3,15 @@ import json
 import anthropic
 from utils import load_prompt_template, call_claude_api
 from character_manager import CharacterManager # For type hints
+from location_manager import LocationManager # IMPORT LocationManager
 
 # --- Gamemaster Input Construction --- #
-def construct_gamemaster_context(game_state: dict, character_manager: CharacterManager) -> dict:
+def construct_gamemaster_context(game_state: dict, character_manager: CharacterManager, location_manager: LocationManager) -> dict:
     """Constructs the game state context dictionary for the Gamemaster Assessor prompt."""
     context = {}
     context['game_mode'] = 'dialogue' if game_state.get('dialogue_active') else 'narrative'
-    context['current_location'] = game_state.get('location', 'unknown')
+    current_location_id = game_state.get('location', 'unknown')
+    context['current_location'] = current_location_id
     context['time_of_day'] = game_state.get('time_of_day', 'unknown')
     context['player_inventory'] = game_state.get('player', {}).get('inventory', [])
     context['player_stats'] = {
@@ -17,6 +19,9 @@ def construct_gamemaster_context(game_state: dict, character_manager: CharacterM
         'charisma': game_state.get('player', {}).get('stats', {}).get('charisma', 10),
     }
     context['present_characters'] = game_state.get('current_npcs', []) 
+    
+    # Add adjacent location data
+    context['adjacent_locations'] = location_manager.get_connections(current_location_id) 
     
     partner_id = game_state.get('dialogue_partner')
     context['dialogue_partner_id'] = partner_id
@@ -41,6 +46,7 @@ def get_gamemaster_assessment(
     user_input: str,
     game_state: dict,
     character_manager: CharacterManager,
+    location_manager: LocationManager,
     claude_client: anthropic.Anthropic | None,
     claude_model_name: str | None,
     gamemaster_template: str
@@ -51,6 +57,7 @@ def get_gamemaster_assessment(
         user_input: The player's input for the turn.
         game_state: The current game state.
         character_manager: The CharacterManager instance.
+        location_manager: The LocationManager instance.
         claude_client: Initialized Anthropic client.
         claude_model_name: Name of the Claude model to use for Gamemaster.
         gamemaster_template: The loaded Gamemaster system prompt template.
@@ -70,7 +77,7 @@ def get_gamemaster_assessment(
     print("\n>>> Asking Gamemaster LLM to assess action... <<<")
 
     # 1. Construct Context
-    game_state_context = construct_gamemaster_context(game_state, character_manager)
+    game_state_context = construct_gamemaster_context(game_state, character_manager, location_manager)
 
     # 2. Construct Input JSON
     input_data_for_prompt = {

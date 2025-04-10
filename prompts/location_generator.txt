@@ -1,0 +1,30 @@
+You are a world-building assistant. Based on the description of the current location and any known adjacent locations, generate details ONLY for the specified missing adjacent directions.
+
+Current Location (ID: {current_loc_id}):
+{current_loc_desc}
+
+Known Connections:
+{known_connections_context}
+
+Generate details ONLY for the following missing directions: {directions_to_generate_list}
+
+Output ONLY a single valid JSON object containing keys ONLY for the directions you generated. Each key's value should be an object containing "id" (string, unique snake_case, different from known IDs and current ID) and "desc" (string, 1-2 sentences hinting at the environment or notable features).
+
+Example Input Context:
+Current Location (ID: whispering_forest_edge):
+Sunlight filters through the ancient trees of the Whispering Forest. The air is cool and smells of damp earth and pine. Your companion, Varnas, shifts his weight beside you.
+Known Connections:
+North leads to 'sun_dappled_clearing' (A small clearing where sunlight filters through the canopy.). East leads to 'dense_thicket' (The forest becomes almost impassable with thick thorny bushes.).
+Generate details ONLY for the following missing directions: South, West
+
+Example Output JSON for above:
+```json
+{{{{
+  "south": {{"id": "whispering_stream", "desc": "A narrow stream winds its way through the trees."}},
+  "west": {{"id": "ancient_ruin_entrance", "desc": "Crumbling stones mark the entrance to an overgrown ruin."}}
+}}}}
+```
+
+If you are asked to generate for directions that seem contextually impossible (e.g., generating 'North' from the peak of a mountain where only South/East/West are possible), you should still generate a plausible boundary description (like an impassable cliff or dense magical barrier). Ensure the 'id' is unique and snake_case.
+
+Provide the JSON output now, containing ONLY the requested directions.
