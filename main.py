@@ -327,6 +327,225 @@ def get_player_input() -> str:
     """Gets the player's command from the console."""
     return input("\n> ").strip()
 
+# --- Game Loop Turn Processing ---
+def process_game_turn(
+    game_state: dict,
+    player_input_raw: str,
+    conversation_history: list,
+    character_manager: CharacterManager,
+    location_manager: LocationManager,
+    claude_client,
+    claude_model_name: str,
+    gemini_client,
+    gemini_model_name: str,
+    prompt_templates: dict
+) -> tuple[dict, list, str | None, list, bool]:
+    """Processes a single turn of the game based on player input.
+
+    Args:
+        game_state: The current game state dictionary.
+        player_input_raw: The raw text input from the player.
+        conversation_history: The history of narrative messages.
+        character_manager: Instance of CharacterManager.
+        location_manager: Instance of LocationManager.
+        claude_client: Initialized Anthropic client.
+        claude_model_name: Name of the Claude model.
+        gemini_client: Initialized Gemini client.
+        gemini_model_name: Name of the Gemini model.
+        prompt_templates: Dictionary of loaded prompt templates.
+
+    Returns:
+        A tuple containing:
+        - updated_game_state: The game state after processing the turn.
+        - updated_conversation_history: The narrative history after the turn.
+        - narrative_text: The main text response for the player.
+        - placeholder_text: The visual/sensory placeholder text.
+        - feedback_messages: List of system/status messages.
+        - stop_processing_flag: Boolean indicating if further game loop processing should stop (e.g., dialogue ended).
+    """
+    # Initialize turn vars
+    outcome_message = ""
+    content_llm_response_text = ""
+    placeholder_output = None
+    stop_processing_flag = False
+    feedback_messages = []
+    state_manager_updates = []
+    action_succeeded = True # Default to success unless a roll fails
+    current_game_state = copy.deepcopy(game_state) # Work on a copy for the turn
+    current_conversation_history = list(conversation_history) # Copy history
+
+    current_game_state['last_player_action'] = player_input_raw
+
+    # --- Gamemaster Assessment Call ---
+    gm_assessment = None
+    try:
+        gm_assessment = get_gamemaster_assessment(
+            player_input_raw, current_game_state, character_manager,
+            claude_client, claude_model_name,
+            prompt_templates.get("gamemaster_system")
+        )
+    except Exception as gm_call_e:
+        print(f"[ERROR] Exception during Gamemaster call: {gm_call_e}")
+        traceback.print_exc()
+        feedback_messages.append(f"[SYS ERR: GM call failed: {gm_call_e}]")
+        # Return early with error state
+        return current_game_state, current_conversation_history, "(The threads of fate tangle unexpectedly...)", None, feedback_messages, True
+
+    if gm_assessment is None:
+        feedback_messages.append("[SYS ERR: Failed to get assessment from Gamemaster.]")
+        # Return early with error state
+        return current_game_state, current_conversation_history,"(The world seems uncertain how to react...)", None, feedback_messages, True
+
+    # --- Action Resolution (Python) ---
+    odds_str = gm_assessment.get("odds", "Medium") # Default odds if missing
+    success_msg = gm_assessment.get("success_message", "(Action succeeds.)")
+    failure_msg = gm_assessment.get("failure_message", "(Action fails.)")
+
+    if odds_str == "Impossible":
+        action_succeeded = False
+        outcome_message = failure_msg # Use failure message for impossibility
+        feedback_messages.append(f"(Action Impossible: {failure_msg})") # Add specific feedback
+        # Skip content generation? Or let it describe the impossibility? Let's let it describe.
+    elif odds_str == "Accept":
+        action_succeeded = True
+        outcome_message = success_msg
+    else: # Easy, Medium, Difficult - Perform roll
+        try:
+            action_succeeded = resolve_action(odds_str, current_game_state, character_manager)
+            outcome_message = success_msg if action_succeeded else failure_msg
+        except Exception as resolve_e:
+            print(f"[ERROR] Exception during action resolution: {resolve_e}")
+            traceback.print_exc()
+            feedback_messages.append(f"[SYS ERR: Action resolution failed: {resolve_e}]")
+            action_succeeded = False # Treat as failure if resolver breaks
+            outcome_message = failure_msg # Default to failure message
+
+    # --- Content Generator LLM Call (Narrative or Dialogue) ---
+    try:
+        if current_game_state['dialogue_active']:
+            # *** CORRECTED DIALOGUE CALL ***
+            # Call the updated handle_dialogue_turn from dialogue.py,
+            # passing the resolved outcome message.
+            content_llm_response_obj, _ = handle_dialogue_turn(
+                game_state=current_game_state,
+                player_utterance=player_input_raw,
+                character_manager=character_manager,
+                claude_client=claude_client,
+                claude_model_name=claude_model_name,
+                dialogue_template=prompt_templates.get("dialogue_system"),
+                outcome_message=outcome_message # Pass resolved outcome
+            )
+            # Logic for manual prompt construction removed from here.
+
+        else: # Narrative Mode
+            # Append User Message (raw input) and GM Outcome Message
+            current_conversation_history.append({"role": "user", "content": player_input_raw})
+            # Inject outcome message for narrative context
+            current_conversation_history.append({"role": "user", "content": f"[Action Outcome: {outcome_message}]"})
+
+            if len(current_conversation_history) > MAX_HISTORY_MESSAGES:
+                current_conversation_history = current_conversation_history[-MAX_HISTORY_MESSAGES:]
+                print(f"[DEBUG] Narrative history truncated.")
+
+            # Call narrative handler (expects history including outcome message)
+            content_llm_response_obj, _ = handle_narrative_turn(
+                current_game_state, current_conversation_history, character_manager, location_manager,
+                claude_client, claude_model_name, prompt_templates
+            )
+
+        # Extract content LLM text response (common to both branches)
+        if content_llm_response_obj and content_llm_response_obj.content:
+             for block in content_llm_response_obj.content:
+                 if block.type == 'text':
+                     content_llm_response_text = block.text.strip()
+                     break
+        if not content_llm_response_text:
+             fallback = "(Description unclear.)" if not current_game_state['dialogue_active'] else "(Character says nothing.)"
+             content_llm_response_text = fallback
+             print("[WARN] No text content found in Content Generator LLM response.")
+
+    except Exception as content_call_e:
+        print(f"[ERROR] Exception during Content Generator LLM call: {content_call_e}")
+        traceback.print_exc()
+        content_llm_response_text = "(The narrative falters...)"
+        feedback_messages.append(f"[SYS ERR: Content LLM call failed: {content_call_e}]")
+        # Skip state manager and updates if content gen fails
+        stop_processing_flag = True
+
+    # --- State Manager LLM Call ---
+    if not stop_processing_flag: # Only run if content generation didn't fail
+        try:
+            state_manager_updates = translate_interaction_to_state_updates(
+                user_input=player_input_raw,
+                llm_response_text=content_llm_response_text,
+                game_state=current_game_state,
+                character_manager=character_manager,
+                claude_client=claude_client,
+                claude_model_name=claude_model_name,
+                state_manager_template=prompt_templates.get("state_manager_system")
+            )
+        except Exception as sm_call_e:
+            print(f"[ERROR] Exception during State Manager call: {sm_call_e}")
+            traceback.print_exc()
+            feedback_messages.append(f"[SYS ERR: State Manager call failed: {sm_call_e}]")
+            # Ensure updates aren't applied if SM fails
+            state_manager_updates = []
+            stop_processing_flag = True
+
+    # --- Apply State Updates (From State Manager) ---
+    if state_manager_updates: # Check if State Manager provided updates
+        try:
+            # Pass state_manager_updates instead of suggested_state_updates
+            stop_processing_flag_from_apply, tool_feedback = apply_state_updates(
+                 state_manager_updates, current_game_state, character_manager, location_manager,
+                 prompt_templates, gemini_client, gemini_model_name,
+                 action_succeeded # Pass success flag
+            )
+            feedback_messages.extend(tool_feedback)
+            # Allow apply_state_updates to set the stop flag (e.g., for dialogue start/end)
+            if stop_processing_flag_from_apply:
+                stop_processing_flag = True
+        except Exception as update_exec_e:
+            print(f"[ERROR] Exception applying state updates: {update_exec_e}")
+            traceback.print_exc()
+            feedback_messages.append(f"[SYS ERR: State update application failed: {update_exec_e}]")
+            stop_processing_flag = True
+    else:
+        # Updated print statement
+        if not stop_processing_flag: # Don't print if an earlier error occurred
+             print("[INFO] State Manager suggested no state updates needed.")
+        # stop_processing_flag handling remains similar, depends on previous steps or update application
+
+    # --- Update History ---
+    # Player input for dialogue is added within handle_dialogue_turn's prompt prep
+    # Assistant response for dialogue needs adding here if dialogue continues
+    if current_game_state['dialogue_active'] and not stop_processing_flag:
+        partner_id = current_game_state.get('dialogue_partner')
+        if partner_id and content_llm_response_text:
+            # Add assistant response to the *persistent* history
+            character_manager.add_dialogue_entry(partner_id, {"speaker": partner_id, "utterance": content_llm_response_text})
+            print(f"[DEBUG MAIN] Appended assistant utterance for {partner_id} to persistent dialogue history.")
+
+    elif not current_game_state['dialogue_active']: # Update narrative history
+         # GM Outcome message was already added before narrative call
+        if content_llm_response_text: # Add assistant content response
+            assistant_message = {"role": "assistant", "content": content_llm_response_text}
+            if not current_conversation_history or current_conversation_history[-1] != assistant_message:
+                current_conversation_history.append(assistant_message)
+                print("[DEBUG MAIN] Appended assistant message to narrative history.")
+
+    # --- Generate Placeholders ---
+    if not stop_processing_flag and not current_game_state['dialogue_active']:
+        try:
+            gemini_prompt = construct_gemini_prompt(content_llm_response_text, current_game_state, prompt_templates.get("gemini_placeholder_template"))
+            placeholder_output = call_gemini_api(gemini_client, gemini_model_name, gemini_prompt)
+        except Exception as e: placeholder_output = "[ Placeholder generation failed ]"
+    elif current_game_state['dialogue_active']: placeholder_output = "[Visuals suppressed]"
+    else: placeholder_output = "[Placeholders suppressed]"
+
+    # --- Return Results ---
+    return current_game_state, current_conversation_history, content_llm_response_text, placeholder_output, feedback_messages, stop_processing_flag
+
 # --- Main Game Loop --- #
 def main():
     """Runs the main game loop using the GM Assessor + Action Resolver + State Manager architecture."""
@@ -373,185 +592,31 @@ def main():
         if player_input_raw.lower() in ['quit', 'exit']:
             print("Goodbye!")
             break
-        
-        game_state['last_player_action'] = player_input_raw
 
-        # Initialize turn vars
-        outcome_message = ""
-        content_llm_response_text = ""
-        placeholder_output = None
-        stop_processing_flag = False 
-        feedback_messages = []
-        state_manager_updates = [] # Initialize list for updates from State Manager
-        action_succeeded = True # Default to success unless a roll fails
+        # Call the refactored turn processing function
+        (
+            updated_game_state,
+            updated_conversation_history,
+            content_llm_response_text,
+            placeholder_output,
+            feedback_messages,
+            _ # stop_processing_flag is handled internally by the loop/turn structure now
+        ) = process_game_turn(
+            game_state,
+            player_input_raw,
+            conversation_history,
+            character_manager,
+            location_manager,
+            claude_client,
+            claude_model_name,
+            gemini_client,
+            gemini_model_name,
+            prompt_templates
+        )
 
-        # --- Gamemaster Assessment Call ---
-        gm_assessment = None
-        try:
-            gm_assessment = get_gamemaster_assessment(
-                player_input_raw, game_state, character_manager,
-                claude_client, claude_model_name, 
-                prompt_templates.get("gamemaster_system")
-            )
-        except Exception as gm_call_e:
-            print(f"[ERROR] Exception during Gamemaster call: {gm_call_e}")
-            traceback.print_exc()
-            feedback_messages.append(f"[SYS ERR: GM call failed: {gm_call_e}]")
-            # Allow loop to continue? Display error and skip turn?
-            display_output("(The threads of fate tangle unexpectedly...)", None, feedback_messages)
-            continue
-
-        if gm_assessment is None:
-            feedback_messages.append("[SYS ERR: Failed to get assessment from Gamemaster.]")
-            display_output("(The world seems uncertain how to react...)", None, feedback_messages)
-            continue # Skip rest of turn processing
-
-        # --- Action Resolution (Python) ---
-        odds_str = gm_assessment.get("odds", "Medium") # Default odds if missing
-        success_msg = gm_assessment.get("success_message", "(Action succeeds.)")
-        failure_msg = gm_assessment.get("failure_message", "(Action fails.)")
-
-        if odds_str == "Impossible":
-            action_succeeded = False
-            outcome_message = failure_msg # Use failure message for impossibility
-            feedback_messages.append(f"(Action Impossible: {failure_msg})") # Add specific feedback
-            # Skip content generation? Or let it describe the impossibility? Let's let it describe.
-        elif odds_str == "Accept":
-            action_succeeded = True
-            outcome_message = success_msg
-        else: # Easy, Medium, Difficult - Perform roll
-            try:
-                action_succeeded = resolve_action(odds_str, game_state, character_manager)
-                outcome_message = success_msg if action_succeeded else failure_msg
-            except Exception as resolve_e:
-                print(f"[ERROR] Exception during action resolution: {resolve_e}")
-                traceback.print_exc()
-                feedback_messages.append(f"[SYS ERR: Action resolution failed: {resolve_e}]")
-                action_succeeded = False # Treat as failure if resolver breaks
-                outcome_message = failure_msg # Default to failure message
-
-        # --- Content Generator LLM Call (Narrative or Dialogue) ---
-        try:
-            if game_state['dialogue_active']:
-                # *** CORRECTED DIALOGUE CALL ***
-                # Call the updated handle_dialogue_turn from dialogue.py,
-                # passing the resolved outcome message.
-                content_llm_response_obj, _ = handle_dialogue_turn(
-                    game_state=game_state,
-                    player_utterance=player_input_raw,
-                    character_manager=character_manager,
-                    claude_client=claude_client,
-                    claude_model_name=claude_model_name,
-                    dialogue_template=prompt_templates.get("dialogue_system"),
-                    outcome_message=outcome_message # Pass resolved outcome
-                )
-                # Logic for manual prompt construction removed from here.
-
-            else: # Narrative Mode
-                # Append User Message (raw input) and GM Outcome Message
-                conversation_history.append({"role": "user", "content": player_input_raw})
-                # Inject outcome message for narrative context
-                conversation_history.append({"role": "user", "content": f"[Action Outcome: {outcome_message}]"})
-
-                if len(conversation_history) > MAX_HISTORY_MESSAGES:
-                    conversation_history = conversation_history[-MAX_HISTORY_MESSAGES:]
-                    print(f"[DEBUG] Narrative history truncated.")
-
-                # Call narrative handler (expects history including outcome message)
-                content_llm_response_obj, _ = handle_narrative_turn(
-                    game_state, conversation_history, character_manager, location_manager,
-                    claude_client, claude_model_name, prompt_templates
-                )
-            
-            # Extract content LLM text response (common to both branches)
-            if content_llm_response_obj and content_llm_response_obj.content:
-                 for block in content_llm_response_obj.content:
-                     if block.type == 'text':
-                         content_llm_response_text = block.text.strip()
-                         break
-            if not content_llm_response_text:
-                 fallback = "(Description unclear.)" if not game_state['dialogue_active'] else "(Character says nothing.)"
-                 content_llm_response_text = fallback
-                 print("[WARN] No text content found in Content Generator LLM response.")
-
-        except Exception as content_call_e:
-            print(f"[ERROR] Exception during Content Generator LLM call: {content_call_e}")
-            traceback.print_exc()
-            content_llm_response_text = "(The narrative falters...)"
-            feedback_messages.append(f"[SYS ERR: Content LLM call failed: {content_call_e}]")
-            # Skip state manager and updates if content gen fails
-            stop_processing_flag = True 
-
-        # --- State Manager LLM Call ---
-        if not stop_processing_flag: # Only run if content generation didn't fail
-            try:
-                state_manager_updates = translate_interaction_to_state_updates(
-                    user_input=player_input_raw,
-                    llm_response_text=content_llm_response_text,
-                    game_state=game_state,
-                    character_manager=character_manager,
-                    claude_client=claude_client,
-                    claude_model_name=claude_model_name,
-                    state_manager_template=prompt_templates.get("state_manager_system")
-                )
-            except Exception as sm_call_e:
-                print(f"[ERROR] Exception during State Manager call: {sm_call_e}")
-                traceback.print_exc()
-                feedback_messages.append(f"[SYS ERR: State Manager call failed: {sm_call_e}]")
-                # Ensure updates aren't applied if SM fails
-                state_manager_updates = []
-                stop_processing_flag = True
-
-        # --- Apply State Updates (From State Manager) ---
-        if state_manager_updates: # Check if State Manager provided updates
-            try:
-                # Pass state_manager_updates instead of suggested_state_updates
-                stop_processing_flag_from_apply, tool_feedback = apply_state_updates(
-                     state_manager_updates, game_state, character_manager, location_manager,
-                     prompt_templates, gemini_client, gemini_model_name, 
-                     action_succeeded # Pass success flag
-                )
-                feedback_messages.extend(tool_feedback)
-                # Allow apply_state_updates to set the stop flag (e.g., for dialogue start/end)
-                if stop_processing_flag_from_apply: 
-                    stop_processing_flag = True 
-            except Exception as update_exec_e:
-                print(f"[ERROR] Exception applying state updates: {update_exec_e}")
-                traceback.print_exc()
-                feedback_messages.append(f"[SYS ERR: State update application failed: {update_exec_e}]")
-                stop_processing_flag = True 
-        else:
-            # Updated print statement
-            if not stop_processing_flag: # Don't print if an earlier error occurred
-                 print("[INFO] State Manager suggested no state updates needed.")
-            # stop_processing_flag handling remains similar, depends on previous steps or update application
-
-        # --- Update History ---
-        # Player input for dialogue is added within handle_dialogue_turn's prompt prep
-        # Assistant response for dialogue needs adding here if dialogue continues
-        if game_state['dialogue_active'] and not stop_processing_flag:
-            partner_id = game_state.get('dialogue_partner')
-            if partner_id and content_llm_response_text:
-                # Add assistant response to the *persistent* history
-                character_manager.add_dialogue_entry(partner_id, {"speaker": partner_id, "utterance": content_llm_response_text})
-                print(f"[DEBUG MAIN] Appended assistant utterance for {partner_id} to persistent dialogue history.")
-                
-        elif not game_state['dialogue_active']: # Update narrative history
-             # GM Outcome message was already added before narrative call
-            if content_llm_response_text: # Add assistant content response
-                assistant_message = {"role": "assistant", "content": content_llm_response_text}
-                if not conversation_history or conversation_history[-1] != assistant_message:
-                    conversation_history.append(assistant_message)
-                    print("[DEBUG MAIN] Appended assistant message to narrative history.")
-
-        # --- Generate Placeholders ---
-        if not stop_processing_flag and not game_state['dialogue_active']:
-            try:
-                gemini_prompt = construct_gemini_prompt(content_llm_response_text, game_state, prompt_templates.get("gemini_placeholder_template"))
-                placeholder_output = call_gemini_api(gemini_client, gemini_model_name, gemini_prompt)
-            except Exception as e: placeholder_output = "[ Placeholder generation failed ]"
-        elif game_state['dialogue_active']: placeholder_output = "[Visuals suppressed]"
-        else: placeholder_output = "[Placeholders suppressed]"
+        # Update state for the next iteration
+        game_state = updated_game_state
+        conversation_history = updated_conversation_history
 
         # --- Display Output ---
         display_output(content_llm_response_text, placeholder_output, feedback_messages)

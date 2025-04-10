@@ -177,3 +177,6 @@ cython_debug/
 # Explicitly ignore virtual environment and env file
 venv/
 .env
+
+game_state.json
+game_settings.json
