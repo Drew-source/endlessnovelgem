@@ -116,12 +116,16 @@ def translate_interaction_to_state_updates(
                 sm_text += block.text
         
         sm_text = sm_text.strip()
-        print(f"[DEBUG] StateManager Raw Response:\n```json\n{sm_text}\n```") 
+        # Print raw response BEFORE parsing attempt
+        print(f"[DEBUG] StateManager Raw Response:\n{sm_text}") 
         
+        # Improved JSON extraction: Find first '[' and last ']'
         json_start = sm_text.find('[')
-        json_end = sm_text.rfind(']') + 1
-        if json_start != -1 and json_end != -1:
+        json_end = sm_text.rfind(']') + 1 # +1 to include the closing bracket
+
+        if json_start != -1 and json_end != -1 and json_end > json_start:
             json_str = sm_text[json_start:json_end]
+            print(f"[DEBUG] Extracted JSON string: {json_str}") # Debug the extracted part
             try:
                 parsed_requests = json.loads(json_str)
                 if isinstance(parsed_requests, list):
@@ -132,20 +136,27 @@ def translate_interaction_to_state_updates(
                         else:
                              print(f"[WARN] StateManager: Invalid request structure ignored: {req}")
                     update_requests = valid_requests
-                    print(f"[INFO] StateManager translated {len(update_requests)} state update requests.")
+                    # This print might be misleading if parsing failed earlier, move it up?
+                    # print(f"[INFO] StateManager translated {len(update_requests)} state update requests.") 
                 else:
                     print("[ERROR] StateManager: Response JSON was not a list.")
             except json.JSONDecodeError as e:
                 print(f"[ERROR] StateManager: Failed to decode response JSON: {e}")
-                print(f"  Raw JSON string attempted: {json_str}")
+                # Show the string that failed decoding
+                print(f"  Raw JSON string attempted: {repr(json_str)}") 
             except Exception as e:
                  print(f"[ERROR] StateManager: Unexpected error parsing response: {e}")
         else:
-            print("[WARN] StateManager: No valid JSON array found in response.")
+            print("[WARN] StateManager: No valid JSON array boundaries found in response.")
 
     elif sm_response_obj:
          print(f"[WARN] StateManager: Response object received, but no content blocks found. Stop Reason: {sm_response_obj.stop_reason}")
     else:
         print("[ERROR] StateManager: No response object received from API call.")
+
+    # Report final count after parsing attempts
+    if update_requests:
+        print(f"[INFO] StateManager successfully parsed {len(update_requests)} state update requests.")
+    # else: No need to print if empty
 
     return update_requests 

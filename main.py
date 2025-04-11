@@ -226,8 +226,11 @@ def apply_state_updates(update_requests: list, game_state: dict, character_manag
                 elif not loc or not location_manager.is_valid_location(loc): feedback_messages.append(f"[SYS ERR: Create char invalid location: {loc}]")
                 else:
                     new_id = character_manager.generate_character(arch, loc, hint)
-                    if new_id: name = character_manager.get_name(new_id); feedback_messages.append(f"({name} appears.)"); location_manager.update_current_npcs()
-                    else: feedback_messages.append("[SYS ERR: Character generation failed.]")
+                    if new_id: 
+                        name = character_manager.get_name(new_id)
+                        feedback_messages.append(f"({name} appears.)")
+                    else: 
+                        feedback_messages.append("[SYS ERR: Character generation failed.]")
                 stop_processing_flag = True
 
             elif request_name == "end_dialogue":
@@ -277,8 +280,11 @@ def apply_state_updates(update_requests: list, game_state: dict, character_manag
                         feedback_messages.append(f"(Exchange failed: {giver} does not have {item}.)")
 
             elif request_name == "update_relationship":
-                target = params.get('target_id')
-                trust_delta = params.get('trust_delta', 0)
+                # Use character_id from State Manager output schema
+                target = params.get('character_id') 
+                trust_delta = params.get('trust_delta', 0) # Default to 0 if missing
+                # ADD checks for other relationship types (e.g., status effects) later if needed
+                
                 if not target:
                     feedback_messages.append("[SYS ERR: Update relationship missing target]")
                 elif target == 'player':
@@ -286,29 +292,51 @@ def apply_state_updates(update_requests: list, game_state: dict, character_manag
                 else:
                     old_trust = character_manager.get_trust(target)
                     if old_trust is not None:
-                        new_trust = character_manager.update_trust(target, trust_delta)
-                        if new_trust is not None:
-                            feedback_messages.append(f"(Trust with {character_manager.get_name(target)} {'increased' if trust_delta > 0 else 'decreased'}.)")
+                        # Apply trust update using the character manager
+                        success = character_manager.update_trust(target, trust_delta)
+                        if success:
+                            # Check if trust actually changed (might hit cap)
+                            new_trust = character_manager.get_trust(target)
+                            if new_trust != old_trust:
+                                feedback_messages.append(f"(Trust with {character_manager.get_name(target)} {'increased' if trust_delta > 0 else 'decreased'}.)")
+                            else:
+                                feedback_messages.append(f"(Trust with {character_manager.get_name(target)} already at limit.)")
                         else:
-                            feedback_messages.append(f"(Trust update failed.)")
+                            feedback_messages.append(f"(Trust update failed for {target}.)")
                     else:
                         feedback_messages.append(f"(Trust update failed: Invalid target {target}.)")
 
             elif request_name == "set_follow_status":
-                # ... (validation [partner correct, value boolean, status different] and application) ...
-                char_id = params.get('character_id'); following = params.get('following')
-                partner_id = game_state.get('dialogue_partner')
-                if not game_state['dialogue_active'] or char_id != partner_id: feedback_messages.append("[SYS ERR: Set follow invalid context]")
-                elif following is None or not isinstance(following, bool): feedback_messages.append("[SYS ERR: Set follow invalid value]")
+                char_id = params.get('character_id')
+                following = params.get('following')
+                
+                # --- Corrected Validation --- 
+                # Validate character exists and is present based on THEIR location, not game_state['location']
+                char_exists = character_manager.get_character_data(char_id)
+                char_current_loc = character_manager.get_location(char_id) if char_exists else None
+                player_current_loc = game_state.get('location') # Player's location for presence check
+
+                if not char_id or not char_exists:
+                    feedback_messages.append(f"[SYS ERR: Set follow invalid character: {char_id}]")
+                # Check if the character's location matches the player's current location
+                elif char_current_loc != player_current_loc: 
+                     feedback_messages.append(f"[SYS ERR: Set follow target not present: {char_id} is at {char_current_loc}, player is at {player_current_loc}]")
+                elif following is None or not isinstance(following, bool):
+                    feedback_messages.append(f"[SYS ERR: Set follow invalid value: {following}]")
                 else:
-                    current = character_manager.get_follow_status(partner_id)
-                    name = character_manager.get_name(partner_id)
-                    if current == following: feedback_messages.append(f"({name} is already {'following' if following else 'not following'}.)")
-                    elif current is None: feedback_messages.append(f"(Cannot get follow status for {name}.)")
+                    current = character_manager.get_follow_status(char_id) # Check status for the target char_id
+                    name = character_manager.get_name(char_id)
+                    if current == following:
+                        feedback_messages.append(f"({name} is already {'following' if following else 'waiting'}.)") # Adjusted wording
+                    elif current is None:
+                        feedback_messages.append(f"(Cannot get follow status for {name}.)")
                     else:
-                        success = character_manager.set_follow_status(partner_id, following)
-                        if success: feedback_messages.append(f"({name} is {'now following' if following else 'no longer following'}.)")
-                        else: feedback_messages.append(f"(Failed to set follow status for {name}.)")
+                        # Apply the status update using the correct char_id
+                        success = character_manager.set_follow_status(char_id, following)
+                        if success:
+                            feedback_messages.append(f"({name} will {'now follow' if following else 'wait here'}.)") # Adjusted wording
+                        else:
+                            feedback_messages.append(f"(Failed to set follow status for {name}.)")
             else:
                 print(f"[WARNING] Unknown state update request name: {request_name}")
                 feedback_messages.append(f"[Internal Note: Unknown request '{request_name}'.]")
@@ -344,34 +372,71 @@ def get_player_input() -> str:
 
 # --- Main Game Loop --- #
 def main():
-    """Runs the main game loop using the GM Assessor + Action Resolver + State Manager architecture."""
-    claude_client, gemini_client, claude_model_name, gemini_model_name = initialize_clients()
+    """Main game loop."""
+    print("\n--- Initializing Endless Novel ---")
+    # Initialize API Clients
+    claude_client, gemini_client, anthropic_model_name, google_model_name = initialize_clients()
 
-    # Load prompt templates
+    # Load Prompt Templates
     prompt_templates = {}
-    required_prompts = ["claude_system", "claude_turn_template",
-                     "gemini_placeholder_template", "dialogue_system",
-                        "summarization", "gamemaster_system", "state_manager_system", 
-                        "location_generator"] # Added location_generator
-    for name in required_prompts:
-        template_content = load_prompt_template(f"{name}.txt")
-        prompt_templates[name] = template_content
+    # Pass only the filename to load_prompt_template, it handles the directory
+    for prompt_name in [
+        "gamemaster_system", "state_manager_system", "dialogue_system",
+        "claude_system", "location_generator", "summarization",
+        "claude_turn_template", 
+        "gemini_placeholder_template" # Added missing visuals template
+    ]:
+        # Let load_prompt_template handle joining with PROMPT_DIR
+        template_content = load_prompt_template(f"{prompt_name}.txt")
+        prompt_templates[prompt_name] = template_content
         if "Error:" in template_content:
-             print(f"[FATAL] Failed to load critical prompt template: {name}.txt. Exiting.")
-             return
+            print(f"[FATAL] Failed to load critical prompt template: {prompt_name}.txt. Exiting.")
+            return # Exit if a critical prompt fails
 
+    # Initialize Managers
     game_state = copy.deepcopy(INITIAL_GAME_STATE)
+    # Initialize CharacterManager correctly - it only takes the initial state dict
+    character_manager = CharacterManager(game_state['companions']) 
+
+    # Ensure the correct key is used here now that loading should work
+    location_generator_template = prompt_templates.get("location_generator")
+    if not location_generator_template or "Error:" in location_generator_template:
+         print("[FATAL] Location generator template failed to load correctly. Exiting.")
+         return
+         
+    # Correctly instantiate LocationManager with all required arguments in the correct order
+    location_manager = LocationManager(
+        game_state_ref=game_state, 
+        character_manager_ref=character_manager, # Pass the character manager
+        claude_client=claude_client,             # Pass the Claude client for generation
+        claude_model_name=anthropic_model_name,  # Pass the Claude model name
+        generator_template=location_generator_template # Pass the template
+    )
+    
+    # Now link LM back to CM (This attribute needs to exist or be handled in CM)
+    # Assuming CharacterManager needs this reference set after initialization.
+    # If CM doesn't actually use location_manager internally, this line might be removable.
+    # For now, keep it as it was part of the structure, but the primary fix is the __init__ call.
+    character_manager.location_manager = location_manager 
+    
+    # --- Initial Location Generation (Before First Turn) ---
+    initial_location_id = game_state.get('location')
+    if initial_location_id and not DEBUG_IGNORE_LOCATION:
+        try:
+            print(f"[INIT] Generating initial adjacent locations for starting location: {initial_location_id}")
+            location_manager.ensure_location_generated(initial_location_id)
+            print(f"[INIT] Initial adjacent locations generated.")
+        except AttributeError as ae:
+            print(f"[FATAL ERROR] Incorrect method name called on LocationManager during init: {ae}")
+            return # Stop execution if this critical setup fails
+        except Exception as e:
+            print(f"[ERROR] Failed to generate initial adjacent locations for {initial_location_id}: {e}")
+            # Decide if this is fatal or just a warning?
+            # For now, just print error and continue.
+
+    # --- Game Loop --- #
     turn_count = 0
     conversation_history = [] # Narrative history
-
-    # Instantiate Managers
-    character_manager = CharacterManager(game_state['companions'])
-    # Pass client, model name, AND generator template needed for adjacent location generation
-    location_manager = LocationManager(game_state, 
-                                     character_manager, 
-                                     claude_client, 
-                                     claude_model_name,
-                                     prompt_templates.get("location_generator")) # Pass template
 
     print("Welcome to Endless Novel (v0.4 - GM Assessor Architecture)")
 
@@ -379,7 +444,7 @@ def main():
     try:
         initial_text = game_state['narrative_context_summary']
         initial_gemini_prompt = construct_gemini_prompt(initial_text, game_state, prompt_templates.get("gemini_placeholder_template"))
-        initial_placeholders = call_gemini_api(gemini_client, gemini_model_name, initial_gemini_prompt)
+        initial_placeholders = call_gemini_api(gemini_client, google_model_name, initial_gemini_prompt)
     except Exception as e:
         print(f"[WARN] Failed initial Gemini call: {e}")
         initial_placeholders = "[ Initial placeholders unavailable ]"
@@ -419,7 +484,7 @@ def main():
                 character_manager, 
                 location_manager, # Added location_manager
                 claude_client, 
-                claude_model_name, 
+                anthropic_model_name, 
                 prompt_templates.get("gamemaster_system")
             )
         except Exception as gm_call_e:
@@ -470,7 +535,7 @@ def main():
                     player_utterance=player_input_raw,
                     character_manager=character_manager,
                     claude_client=claude_client,
-                    claude_model_name=claude_model_name,
+                    claude_model_name=anthropic_model_name,
                     dialogue_template=prompt_templates.get("dialogue_system"),
                     outcome_message=outcome_message # Pass resolved outcome
                 )
@@ -487,7 +552,7 @@ def main():
                 # Call narrative handler (expects history including outcome message)
                 content_llm_response_obj, _ = handle_narrative_turn(
                     game_state, conversation_history, character_manager, location_manager,
-                    claude_client, claude_model_name, prompt_templates
+                    claude_client, anthropic_model_name, prompt_templates
                 )
             
             # Extract content LLM text response (common to both branches)
@@ -521,7 +586,7 @@ def main():
                     character_manager=character_manager,
                     location_manager=location_manager,
                     claude_client=claude_client,
-                    claude_model_name=claude_model_name,
+                    claude_model_name=anthropic_model_name,
                     state_manager_template=prompt_templates.get("state_manager_system")
                 )
                 # REMOVED erroneous handle_claude_response call here
@@ -538,7 +603,7 @@ def main():
                 stop_processing_flag_from_apply, tool_feedback = apply_state_updates(
                      state_manager_updates, # Pass the list received from State Manager
                      game_state, character_manager, location_manager,
-                     prompt_templates, gemini_client, gemini_model_name,
+                     prompt_templates, gemini_client, google_model_name,
                      action_succeeded # Pass success flag
                 )
                 feedback_messages.extend(tool_feedback)
@@ -555,6 +620,15 @@ def main():
             if not stop_processing_flag: # Don't print if an earlier error occurred
                  print("[INFO] State Manager suggested no state updates needed.")
             # stop_processing_flag handling remains similar, depends on previous steps or update application
+
+        # --- Generate Placeholders (Moved BEFORE history update) ---
+        if not stop_processing_flag and not game_state['dialogue_active']:
+            try:
+                gemini_prompt = construct_gemini_prompt(content_llm_response_text, game_state, prompt_templates.get("gemini_placeholder_template"))
+                placeholder_output = call_gemini_api(gemini_client, google_model_name, gemini_prompt)
+            except Exception as e: placeholder_output = f"[ Placeholder generation failed: {e} ]" # Include error
+        elif game_state['dialogue_active']: placeholder_output = "[Visuals suppressed during dialogue]"
+        else: placeholder_output = "[Placeholders suppressed due to error]"
 
         # --- Update History ---
         # Player input for dialogue is added within handle_dialogue_turn's prompt prep
@@ -574,15 +648,6 @@ def main():
                     conversation_history.append(assistant_message)
                     print("[DEBUG MAIN] Appended assistant message to narrative history.")
 
-        # --- Generate Placeholders ---
-        if not stop_processing_flag and not game_state['dialogue_active']:
-            try:
-                gemini_prompt = construct_gemini_prompt(content_llm_response_text, game_state, prompt_templates.get("gemini_placeholder_template"))
-                placeholder_output = call_gemini_api(gemini_client, gemini_model_name, gemini_prompt)
-            except Exception as e: placeholder_output = "[ Placeholder generation failed ]"
-        elif game_state['dialogue_active']: placeholder_output = "[Visuals suppressed]"
-        else: placeholder_output = "[Placeholders suppressed]"
-
         # --- Generate Adjacent Locations (if needed, AFTER state updates) ---
         # Only generate for Narrative mode AFTER the turn's logic is complete
         if not game_state['dialogue_active']:
@@ -590,7 +655,7 @@ def main():
              try:
                  current_loc = game_state.get('location')
                  if current_loc:
-                     # Check the return status
+                     # Check the return status - Uses the CORRECT method name
                      generation_ok = location_manager.ensure_location_generated(current_loc)
                      if not generation_ok:
                          print("[WARN Loop End] Location generation failed or produced invalid data.")
@@ -603,26 +668,19 @@ def main():
                  traceback.print_exc()
                  feedback_messages.append("[System: An error occurred while exploring the surroundings.]") # Feedback for next turn
 
-        # --- Display Output to Player ---
-        # Show narrative response
-        if content_llm_response_text:
-            print("\n" + content_llm_response_text)
+        # --- Display Output to Player --- 
+        # Call the dedicated display function to handle narrative, feedback, and visuals
+        display_output(content_llm_response_text, placeholder_output, feedback_messages)
             
-        # Show any feedback messages
-        if feedback_messages:
-            print("\nSystem Messages:")
-            for msg in feedback_messages:
-                print(msg)
-                
-        # Debug mode: print current state
+        # Debug mode: print current state (Keep this separate)
         if DEBUG_MODE: # Use the constant defined in config
             print("\nDEBUG - Current State:")
             print(f"Game State: {game_state}")
             print(f"Character Manager State: {character_manager.get_state()}")
             print(f"Location Manager State: {location_manager.get_state()}")
             
-        # Clear feedback messages for next turn
-        feedback_messages = []
+        # Clear feedback messages for next turn (Keep this separate)
+        # feedback_messages = [] # This seems to be missing, should probably be here
 
         # --- Check Turn Limit ---
         if turn_count >= MAX_TURNS: print(f"\nReached turn limit ({MAX_TURNS})."); break

@@ -97,47 +97,39 @@ class LocationManager:
         return node['description'] if node else None
 
     def ensure_location_generated(self, location_id: str) -> bool:
-        """Ensures the adjacent locations for the given location_id have been generated,
-           focusing only on directions that are currently missing connections.
+        """Ensures the adjacent locations for the given location_id have been generated.
+           Always asks the LLM to describe N, E, S, W, then ignores already known connections.
 
         Returns:
-            bool: True if generation succeeded for all missing directions or was not needed,
-                  False if generation failed or was incomplete.
+            bool: True if generation/processing succeeded or was not needed,
+                  False if LLM call or processing failed.
         """
         node = self.location_graph.get(location_id)
         if not node:
             print(f"[ERROR LM] Cannot generate adjacencies for unknown location: {location_id}")
             return False
-
-        # --- Identify Missing Directions --- 
+            
+        # Check if already fully generated (all 4 directions present)
         current_connections = node.get('connections', {})
-        missing_directions = []
-        for direction in DIRECTIONS:
-            if direction not in current_connections:
-                missing_directions.append(direction)
-
-        # If no directions are missing, generation is considered complete for this node
-        if not missing_directions:
-            if not node.get('adjacent_generated', False):
-                 print(f"[DEBUG LM Gen] No missing connections for {location_id}, marking as generated.")
-                 node['adjacent_generated'] = True # Mark as done if all connections exist
+        if len(current_connections) == 4 and node.get('adjacent_generated', False):
+            print(f"[DEBUG LM Gen] Connections for {location_id} already fully generated.")
             return True
 
-        # If we reach here, some directions are missing. Proceed with generation.
-        print(f"[INFO LM] Generating missing adjacent locations for: {location_id}. Missing: {missing_directions}")
+        # If we reach here, some might be missing or generation hasn't been confirmed.
+        # ALWAYS ask for all 4 directions now.
+        print(f"[INFO LM] Ensuring all adjacent locations (N, E, S, W) are described for: {location_id}.")
         current_desc = node.get('description', 'an unknown area')
 
-        # --- Build Context for Prompt --- 
+        # --- Build Context for Prompt (Still useful for LLM) --- 
         known_connections_context_lines = []
-        for direction in DIRECTIONS:
-            if direction not in missing_directions:
-                connected_id = current_connections.get(direction)
-                if connected_id:
-                    connected_desc = self.get_location_description(connected_id) or "(description unknown)"
-                    known_connections_context_lines.append(f"{direction.capitalize()} leads to '{connected_id}' ({connected_desc}).")
+        for direction in DIRECTIONS: # Iterate through N, E, S, W
+            connected_id = current_connections.get(direction) # Check if connection exists
+            if connected_id:
+                connected_desc = self.get_location_description(connected_id) or "(description unknown)"
+                known_connections_context_lines.append(f"{direction.capitalize()} leads to '{connected_id}' ({connected_desc}).")
         
         known_connections_context = "\n".join(known_connections_context_lines) if known_connections_context_lines else "None."
-        directions_to_generate_list = ", ".join(missing_directions)
+        # REMOVED: directions_to_generate_list - No longer needed
 
         # --- Prepare and Format Prompt --- 
         if "Error:" in self._generator_template:
@@ -145,27 +137,31 @@ class LocationManager:
              return False
 
         try:
-            prompt_text = self._generator_template.format(
-                current_loc_id=location_id,
-                current_loc_desc=current_desc,
-                known_connections_context=known_connections_context,
-                directions_to_generate_list=directions_to_generate_list
-            )
-        except KeyError as e:
-            print(f"[ERROR LM Gen] Missing key formatting generator template: {e}")
-            return False
+            # --- Manual String Replacement --- (Keep using replace for safety)
+            # Retrieve the narrative summary from the game state
+            narrative_summary = self._game_state.get('narrative_context_summary', 'No summary available.')
+            
+            prompt_text = self._generator_template
+            prompt_text = prompt_text.replace('{current_loc_id}', str(location_id))
+            prompt_text = prompt_text.replace('{current_loc_desc}', str(current_desc))
+            prompt_text = prompt_text.replace('{known_connections_context}', str(known_connections_context))
+            prompt_text = prompt_text.replace('{narrative_summary}', str(narrative_summary)) # Add replacement for summary
+            
+            # Basic check for leftover placeholders (less critical now)
+            if '{' in prompt_text or '}' in prompt_text:
+                 print(f"[WARN LM Gen] Potential unreplaced placeholder detected in prompt text after manual replacement.")
+
         except Exception as e:
-             print(f"[ERROR LM Gen] Failed formatting generator template: {e}")
+             print(f"[ERROR LM Gen] Failed during manual prompt string construction: {e}")
              return False
 
         generator_messages = [{"role": "user", "content": prompt_text}]
-        # Ensure both 'system' and 'messages' keys are present
         generator_prompt_details = { 
-            "system": "", # Add empty system prompt for structure
+            "system": "", 
             "messages": generator_messages 
         }
 
-        all_missing_generated_successfully = False # Assume failure until proven otherwise
+        generation_successful = False # Track overall success for this attempt
         try:
             # --- Call LLM --- 
             response_obj = call_claude_api(
@@ -175,48 +171,48 @@ class LocationManager:
                 tools=None
             )
 
-            generated_data = None # Parsed JSON for the *requested* directions
+            generated_data = None
             if response_obj and response_obj.content:
                 resp_text = "".join(block.text for block in response_obj.content if block.type == 'text').strip()
-                print(f"[DEBUG LM Gen Raw]:\\n{resp_text}")
+                print(f"[DEBUG LM Gen Raw]:\n{resp_text}")
 
-                # --- Use find/rfind to extract JSON --- 
+                # --- JSON Parsing --- 
                 json_start = resp_text.find('{')
                 json_end = resp_text.rfind('}') + 1
-                if json_start != -1 and json_end != -1:
+                if json_start != -1 and json_end != -1 and json_end > json_start:
                     json_str = resp_text[json_start:json_end]
                     try:
                         parsed_data = json.loads(json_str)
-                        # --- Validate Parsed Data Structure and Keys (Keep this validation) ---
-                        is_valid_structure = True
+                        # --- Validation --- 
+                        is_valid = True
                         if not isinstance(parsed_data, dict):
                             print("[ERROR LM Gen Parse] Generated JSON is not a dictionary.")
-                            is_valid_structure = False
+                            is_valid = False
                         else:
-                            # Check if all returned keys are valid directions we asked for
+                            # Expect exactly N, E, S, W keys
+                            expected_keys = set(DIRECTIONS)
                             returned_keys = set(parsed_data.keys())
-                            requested_keys = set(missing_directions)
-                            if not returned_keys.issubset(requested_keys):
-                                print(f"[ERROR LM Gen Parse] JSON contains unexpected keys: {returned_keys - requested_keys}")
-                                is_valid_structure = False
+                            
+                            if returned_keys != expected_keys:
+                                print(f"[ERROR LM Gen Parse] JSON keys do not match expected N,E,S,W. Got: {returned_keys}")
+                                is_valid = False
                             else:
-                                # Validate the structure of each returned direction
+                                # Validate structure of each direction if keys are correct
                                 for direction, dir_data in parsed_data.items():
                                     if not isinstance(dir_data, dict) or \
                                        'id' not in dir_data or \
                                        'desc' not in dir_data or \
                                        not isinstance(dir_data['id'], str) or not dir_data['id'] or \
                                        not isinstance(dir_data['desc'], str) or not dir_data['desc']:
-                                        
                                         print(f"[ERROR LM Gen Parse] Invalid structure or empty value for returned direction '{direction}'.")
-                                        is_valid_structure = False
-                                        break # Stop validation
+                                        is_valid = False
+                                        break 
                         
-                        if is_valid_structure:
-                            generated_data = parsed_data # Assign if structure is fully valid
+                        if is_valid:
+                            generated_data = parsed_data 
 
                     except json.JSONDecodeError as e:
-                        print(f"[ERROR LM Gen Parse] Failed to decode JSON: {e}\\nJSON string: {json_str}")
+                        print(f"[ERROR LM Gen Parse] Failed to decode JSON: {e}\nJSON string: {json_str}")
                     except Exception as e:
                          print(f"[ERROR LM Gen Parse] Unexpected error parsing JSON: {e}")
                 else:
@@ -224,16 +220,19 @@ class LocationManager:
             else:
                  print(f"[ERROR LM Gen Call] No response content from generator LLM. Stop Reason: {response_obj.stop_reason if response_obj else 'N/A'}")
 
-            # --- Process valid generated data --- 
-            successfully_added_directions = set() # Track which *missing* directions were added
+            # --- Process VALIDATED data --- 
+            connections_added_this_run = 0
             if generated_data:
                 print(f"[DEBUG LM Gen Parsed]: {generated_data}")
-                # Iterate through the directions *returned* by the LLM
-                for direction, adj_data in generated_data.items(): 
-                    # Double-check if connection somehow got added between check and now (unlikely but safe)
-                    if direction in node['connections']:
-                         continue
+                # Iterate through the N, E, S, W keys returned by the LLM
+                for direction in DIRECTIONS: 
+                    adj_data = generated_data.get(direction) # Should always exist if validation passed
+                    # Check if this connection already exists in the graph
+                    if direction in current_connections:
+                         print(f"  [DEBUG LM Gen] Skipping direction '{direction}', connection already exists.")
+                         continue # Skip processing if connection is already known
                          
+                    # If connection doesn't exist, process the generated data
                     adj_id = adj_data['id']
                     adj_desc = adj_data['desc']
 
@@ -247,28 +246,23 @@ class LocationManager:
 
                     # Add connections (handles bidirectional)
                     self.add_connection(location_id, direction, adj_id)
-                    successfully_added_directions.add(direction) # Mark this direction as added
+                    connections_added_this_run += 1
                 
-                # Check if all *originally missing* directions were successfully added
-                if successfully_added_directions == set(missing_directions):
-                    print(f"[INFO LM] Successfully generated and added all missing connections for {location_id}: {missing_directions}")
-                    self.location_graph[location_id]['adjacent_generated'] = True
-                    all_missing_generated_successfully = True
-                else:
-                    added_list = sorted(list(successfully_added_directions))
-                    still_missing = sorted(list(set(missing_directions) - successfully_added_directions))
-                    print(f"[WARN LM Gen] Partially generated connections for {location_id}. Added: {added_list}. Still Missing: {still_missing}")
-                    # Keep adjacent_generated False, all_missing_generated_successfully remains False
+                # If we successfully processed data, mark as generated 
+                # (even if some were skipped because they existed or IDs clashed)
+                print(f"[INFO LM] Processed LLM generation for {location_id}. Added {connections_added_this_run} new connections.")
+                self.location_graph[location_id]['adjacent_generated'] = True
+                generation_successful = True
             else:
-                print(f"[ERROR LM] Failed to generate valid adjacent location data for {location_id} for directions {missing_directions}. Adjacencies remain unknown.")
-                # Keep adjacent_generated False, all_missing_generated_successfully remains False
+                print(f"[ERROR LM] Failed to generate/parse valid N,E,S,W data for {location_id}. Adjacencies remain unknown.")
+                # Keep adjacent_generated False, generation_successful remains False
 
         except Exception as e:
             print(f"[ERROR LM] Exception during adjacent location generation call: {e}")
             traceback.print_exc()
-            # Keep adjacent_generated False, all_missing_generated_successfully remains False
+            # Keep adjacent_generated False, generation_successful remains False
 
-        return all_missing_generated_successfully
+        return generation_successful
 
     def is_valid_location(self, location_id: str) -> bool:
         """Checks if the given location ID is a valid, known location in the graph."""

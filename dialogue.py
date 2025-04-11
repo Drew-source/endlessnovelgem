@@ -110,10 +110,21 @@ def handle_dialogue_turn(
         formatted_history_string = format_dialogue_history_for_prompt(history_for_prompt, character_manager)
 
         # --- System Prompt Construction --- #
+        
+        # Example: create a "tone_directive" that influences how edgy or hostile the character might be
+        if trust_score < -20:
+            tone_directive = "Your tone is suspicious, edgy, or even hostile. Don't be afraid to show conflict."
+        elif trust_score > 50:
+            tone_directive = "Your tone is warm and friendly, but you can still be bold or direct if the player challenges you."
+        else:
+            tone_directive = "You are neutral or mildly wary. You can become edgy or welcoming depending on the player's words."
+
+        # Base system context
         system_context = f"You are {character_name}. Respond naturally."
         if "Error:" not in dialogue_template:
             try:
-                 system_context = dialogue_template.format(
+                 # Format the main template
+                 formatted_template = dialogue_template.format(
                      character_name=character_name,
                      character_id=character_id_str,
                      trust_score=trust_score,
@@ -130,10 +141,18 @@ def handle_dialogue_turn(
                      # Let's assume the prompt was updated to just use dialogue_history
                      # player_utterance="" # Or remove key entirely
                  )
+                 # Append the tone directive after the formatted template
+                 system_context = f"{formatted_template}\n\n## Tone Directive:\n{tone_directive}"
             except KeyError as e:
                  print(f"[ERROR] Key error formatting dialogue template: {e}. Using fallback.")
+                 # Append tone even to fallback?
+                 system_context += f"\n\n## Tone Directive:\n{tone_directive}" # Append to fallback context too
             except Exception as e:
                  print(f"[ERROR] Failed formatting dialogue template: {e}. Using fallback.")
+                 # Append tone even to fallback?
+                 system_context += f"\n\n## Tone Directive:\n{tone_directive}" # Append to fallback context too
+        else: # If template itself had error
+             system_context += f"\n\n## Tone Directive:\n{tone_directive}" # Append to base context
         
         # --- Message History Construction (for API) --- #
         # Use the history_for_prompt which includes the latest player/GM messages

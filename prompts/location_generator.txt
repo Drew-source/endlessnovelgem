@@ -1,30 +1,55 @@
-You are a world-building assistant. Based on the description of the current location and any known adjacent locations, generate details ONLY for the specified missing adjacent directions.
+# Location Generator Prompt
 
-Current Location (ID: {current_loc_id}):
-{current_loc_desc}
+## Your Task:
+Given the current location ID/description, known adjacent locations, and a narrative summary, generate plausible new location IDs and descriptions for **ALL FOUR cardinal directions (North, East, South, West)**. Aim to create locations that are not only geographically plausible but also offer **narrative potential** aligned with the `narrative_summary` and current situation.
 
-Known Connections:
-{known_connections_context}
+## Input Format:
+You will receive:
+*   `current_loc_id`: The ID of the location you are generating neighbors for.
+*   `current_loc_desc`: The text description of the current location.
+*   `known_connections_context`: Text describing already connected locations.
+*   `narrative_summary`: A brief summary of recent game events and the overall story context.
 
-Generate details ONLY for the following missing directions: {directions_to_generate_list}
+## Output Requirements:
+*   **Output ONLY a valid JSON object.** No extra text.
+*   The JSON object **MUST** contain **EXACTLY FOUR** keys: `"north"`, `"east"`, `"south"`, `"west"`.
+*   For each of the four direction keys:
+    *   Consider the `narrative_summary` and `current_loc_desc`. Generate an ID and description that fits the context and could lead to interesting gameplay (e.g., if the summary mentions pursuit, a generated location might be a good hiding spot or an ambush point; if it mentions ancient ruins, a generated location could be related).
+    *   If `known_connections_context` shows a connection exists, you can reference it, but ensure the key is still present.
+    *   If the direction is NOT mentioned in `known_connections_context`, you MUST generate:
+        *   `"id"`: A **unique**, descriptive location ID (lowercase, underscores) reflecting the narrative potential (e.g., `shadowy_figure_trail`, `abandoned_watchtower`).
+        *   `"desc"`: A brief (1-2 sentence) evocative description hinting at the location's relevance to the story or potential events.
+    *   If a direction is impassable, provide an ID/description for the boundary, making it narratively consistent if possible (e.g., `rockslide_blockage_north`).
+*   Ensure generated descriptions are consistent.
 
-Output ONLY a single valid JSON object containing keys ONLY for the directions you generated. Each key's value should be an object containing "id" (string, unique snake_case, different from known IDs and current ID) and "desc" (string, 1-2 sentences hinting at the environment or notable features).
-
-Example Input Context:
-Current Location (ID: whispering_forest_edge):
-Sunlight filters through the ancient trees of the Whispering Forest. The air is cool and smells of damp earth and pine. Your companion, Varnas, shifts his weight beside you.
-Known Connections:
-North leads to 'sun_dappled_clearing' (A small clearing where sunlight filters through the canopy.). East leads to 'dense_thicket' (The forest becomes almost impassable with thick thorny bushes.).
-Generate details ONLY for the following missing directions: South, West
-
-Example Output JSON for above:
-```json
-{{{{
-  "south": {{"id": "whispering_stream", "desc": "A narrow stream winds its way through the trees."}},
-  "west": {{"id": "ancient_ruin_entrance", "desc": "Crumbling stones mark the entrance to an overgrown ruin."}}
-}}}}
+## Example Input:
+```
+current_loc_id: forest_path_section_3
+current_loc_desc: A winding path through dense forest. Sunlight struggles to penetrate the canopy.
+known_connections_context: North leads to 'forest_path_section_2' (A slightly more open section of the path.).
+narrative_summary: The player is searching for a lost artifact rumoured to be in an old ruin deep in the forest.
 ```
 
-If you are asked to generate for directions that seem contextually impossible (e.g., generating 'North' from the peak of a mountain where only South/East/West are possible), you should still generate a plausible boundary description (like an impassable cliff or dense magical barrier). Ensure the 'id' is unique and snake_case.
+## Example Output (JSON Only) - MUST contain exactly N, E, S, W keys, considering narrative:
+```json
+{
+  "north": {
+    "id": "forest_path_section_2", 
+    "desc": "(Known Connection) A slightly more open section of the path."
+  },
+  "east": {
+    "id": "overgrown_ruin_wall", 
+    "desc": "Eastward, crumbling moss-covered stones rise from the undergrowth - perhaps part of the ruin?"
+  },
+  "south": {
+    "id": "ancient_mossy_bridge",
+    "desc": "The path leads south to an ancient, moss-covered stone bridge crossing a small, murky stream."
+  },
+  "west": {
+    "id": "hidden_game_trail",
+    "desc": "To the west, a barely visible game trail branches off, potentially a shortcut deeper into the woods."
+  }
+}
+```
 
-Provide the JSON output now, containing ONLY the requested directions.
+**Generate the JSON output for the provided input now. REMEMBER: Output MUST contain exactly N, E, S, W keys, considering the narrative summary.**
