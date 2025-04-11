@@ -310,33 +310,28 @@ def apply_state_updates(update_requests: list, game_state: dict, character_manag
                 char_id = params.get('character_id')
                 following = params.get('following')
                 
-                # --- Corrected Validation --- 
-                # Validate character exists and is present based on THEIR location, not game_state['location']
+                # --- Validation --- 
                 char_exists = character_manager.get_character_data(char_id)
                 char_current_loc = character_manager.get_location(char_id) if char_exists else None
-                player_current_loc = game_state.get('location') # Player's location for presence check
+                player_current_loc = game_state.get('location')
 
                 if not char_id or not char_exists:
                     feedback_messages.append(f"[SYS ERR: Set follow invalid character: {char_id}]")
-                # Check if the character's location matches the player's current location
                 elif char_current_loc != player_current_loc: 
                      feedback_messages.append(f"[SYS ERR: Set follow target not present: {char_id} is at {char_current_loc}, player is at {player_current_loc}]")
                 elif following is None or not isinstance(following, bool):
                     feedback_messages.append(f"[SYS ERR: Set follow invalid value: {following}]")
                 else:
-                    current = character_manager.get_follow_status(char_id) # Check status for the target char_id
+                    # --- Force State Update --- 
+                    # Always attempt to set the status if validation passes.
+                    # Remove the check for current == following.
                     name = character_manager.get_name(char_id)
-                    if current == following:
-                        feedback_messages.append(f"({name} is already {'following' if following else 'waiting'}.)") # Adjusted wording
-                    elif current is None:
-                        feedback_messages.append(f"(Cannot get follow status for {name}.)")
+                    success = character_manager.set_follow_status(char_id, following)
+                    if success:
+                        feedback_messages.append(f"({name} will {'now follow' if following else 'wait here'}.)") 
                     else:
-                        # Apply the status update using the correct char_id
-                        success = character_manager.set_follow_status(char_id, following)
-                        if success:
-                            feedback_messages.append(f"({name} will {'now follow' if following else 'wait here'}.)") # Adjusted wording
-                        else:
-                            feedback_messages.append(f"(Failed to set follow status for {name}.)")
+                        # This might occur if the character_id was invalid despite checks, or another internal CM error.
+                        feedback_messages.append(f"(Failed to set follow status for {name}.)") 
             else:
                 print(f"[WARNING] Unknown state update request name: {request_name}")
                 feedback_messages.append(f"[Internal Note: Unknown request '{request_name}'.]")

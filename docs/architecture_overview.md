@@ -50,7 +50,7 @@ The main game loop orchestrates the interaction between different modules and LL
 
 ## Current State & Next Steps
 
-The architecture successfully separates concerns: assessment (GM), content generation (Narrative/Dialogue), and state change determination (State Manager). The core loop integrates these components.
+The architecture successfully separates concerns: assessment (GM), content generation (Narrative/Dialogue), and state change determination (State Manager). The core loop integrates these components. Companion follow status consistency has been improved through code and prompt refinements.
 
 However, recent testing revealed several key areas needing attention:
 

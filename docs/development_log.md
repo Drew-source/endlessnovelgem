@@ -286,3 +286,16 @@
     *   Generated `requirements.txt`.
     *   Updated `docs/project_structure.md`.
     *   Updated `
+
+**YYYY-MM-DD HH:MM:** *(Timestamp for this action)*
+*   **Goal:** Debug inconsistent companion following behavior ("Sticky Varnas").
+*   **Input Context:** User reported that companion Varnas continued to be described as following the player in the narrative text even after being told to "stay here" and the state update (`set_follow_status`) was seemingly applied correctly.
+*   **Discussion & Actions:**
+    *   **Analysis:** Reviewed game logs. Confirmed that the State Manager correctly identified the `set_follow_status(following=False)` request in Turn 1. The `apply_state_updates` function in `main.py` also correctly validated and processed this request, issuing the feedback "(Varnas will wait here.)". However, in Turn 2, when the player moved, the `LocationManager.update_follower_locations` *incorrectly* moved Varnas, indicating that `CharacterManager.get_follow_status` was returning `True` despite the update in the previous turn.
+    *   **Hypothesis:** The issue stemmed from a potential state desynchronization or the Narrative LLM ignoring the `following_player: False` state due to older context or insufficient prompting.
+    *   **Code Fix:** Modified the `set_follow_status` handling block within `main.py::apply_state_updates`. Removed the check that skipped the update if the current state matched the requested state (`if current == following:`). Now, the `character_manager.set_follow_status` function is *always* called if the initial validation (character exists, is present) passes, making the command authoritative.
+    *   **Prompt Fix:** Strengthened the narrative system prompt (`prompts/claude_system.txt`) by adding explicit directives under `## Important Guidelines` and `## Core Responsibilities` instructing the LLM to strictly adhere to the `following_player` status provided in the character context, disregard older conflicting history, and avoid depicting non-following companions as present unless their location matches the player's.
+*   **Affected Files/State:** Modified `main.py` (`apply_state_updates` function). Modified `prompts/claude_system.txt`. Updated `docs/development_log.md` (this entry).
+*   **Decision:** Implemented both a code fix (forcing state update) and a prompt fix (strengthening narrative constraints) to address the inconsistent following behavior.
+*   **Current Status:** Testing confirmed that Varnas now correctly remains in the previous location when told to wait, and the narrative text reflects this accurately.
+*   **Next:** Continue testing other interactions and address remaining issues listed in `architecture_overview.md` (e.g., `LocationManager` validation).
